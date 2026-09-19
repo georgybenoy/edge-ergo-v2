@@ -1,0 +1,292 @@
+{
+  "timestamp": "2026-09-19 17:20:00",
+  "hardware_specs": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "os_version": "10.0.26200",
+    "architecture": "AMD64",
+    "processor": "Intel64 Family 6 Model 151 Stepping 2, GenuineIntel",
+    "physical_cores": 8,
+    "logical_cores": 12,
+    "cpu_freq_mhz": 2400.0,
+    "total_ram_gb": 15.71,
+    "available_ram_gb": 2.17,
+    "detected_cameras": [
+      0,
+      1
+    ],
+    "python_version": "3.10.11"
+  },
+  "profiles": [
+    {
+      "profile_name": "High-End Workstation (1080p)",
+      "cpu_affinity": null,
+      "resolution": [
+        1920,
+        1080
+      ],
+      "target_fps": 30.0,
+      "pose_stats": {
+        "count": 100,
+        "mean_ms": 20.4,
+        "min_ms": 14.79,
+        "max_ms": 32.52,
+        "median_ms": 19.95,
+        "p95_ms": 27.04,
+        "fps": 49.03
+      },
+      "face_stats": {
+        "count": 100,
+        "mean_ms": 7.1,
+        "min_ms": 4.96,
+        "max_ms": 13.71,
+        "median_ms": 6.72,
+        "p95_ms": 10.02,
+        "fps": 140.78
+      },
+      "geometry_stats": {
+        "count": 100,
+        "mean_ms": 0.19,
+        "min_ms": 0.11,
+        "max_ms": 0.83,
+        "median_ms": 0.15,
+        "p95_ms": 0.37,
+        "fps": 5277.52
+      },
+      "expression_stats": {
+        "count": 100,
+        "mean_ms": 0.01,
+        "min_ms": 0.01,
+        "max_ms": 0.03,
+        "median_ms": 0.01,
+        "p95_ms": 0.01,
+        "fps": 114495.07
+      },
+      "end_to_end_stats": {
+        "count": 100,
+        "mean_ms": 29.36,
+        "min_ms": 22.66,
+        "max_ms": 43.33,
+        "median_ms": 28.05,
+        "p95_ms": 38.65,
+        "fps": 34.06
+      },
+      "sustained_fps": 33.97,
+      "cpu_mean_pct": 125.0,
+      "cpu_peak_pct": 168.9,
+      "memory_start_rss_mb": 221.62,
+      "memory_peak_rss_mb": 222.1,
+      "memory_end_rss_mb": 222.1,
+      "memory_delta_mb": 0.47,
+      "total_frames_processed": 100,
+      "total_duration_sec": 2.94
+    },
+    {
+      "profile_name": "Modern Desktop (720p)",
+      "cpu_affinity": null,
+      "resolution": [
+        1280,
+        720
+      ],
+      "target_fps": 30.0,
+      "pose_stats": {
+        "count": 100,
+        "mean_ms": 19.61,
+        "min_ms": 14.24,
+        "max_ms": 34.61,
+        "median_ms": 18.75,
+        "p95_ms": 27.8,
+        "fps": 50.99
+      },
+      "face_stats": {
+        "count": 100,
+        "mean_ms": 4.29,
+        "min_ms": 3.29,
+        "max_ms": 7.68,
+        "median_ms": 4.12,
+        "p95_ms": 5.9,
+        "fps": 233.35
+      },
+      "geometry_stats": {
+        "count": 100,
+        "mean_ms": 0.15,
+        "min_ms": 0.11,
+        "max_ms": 0.34,
+        "median_ms": 0.12,
+        "p95_ms": 0.27,
+        "fps": 6820.44
+      },
+      "expression_stats": {
+        "count": 100,
+        "mean_ms": 0.01,
+        "min_ms": 0.01,
+        "max_ms": 0.02,
+        "median_ms": 0.01,
+        "p95_ms": 0.01,
+        "fps": 127975.44
+      },
+      "end_to_end_stats": {
+        "count": 100,
+        "mean_ms": 22.81,
+        "min_ms": 17.45,
+        "max_ms": 47.47,
+        "median_ms": 20.75,
+        "p95_ms": 32.52,
+        "fps": 43.83
+      },
+      "sustained_fps": 43.83,
+      "cpu_mean_pct": 152.9,
+      "cpu_peak_pct": 194.7,
+      "memory_start_rss_mb": 213.38,
+      "memory_peak_rss_mb": 213.9,
+      "memory_end_rss_mb": 213.9,
+      "memory_delta_mb": 0.52,
+      "total_frames_processed": 100,
+      "total_duration_sec": 2.28
+    },
+    {
+      "profile_name": "Standard Office Laptop (480p)",
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "resolution": [
+        640,
+        480
+      ],
+      "target_fps": 15.0,
+      "pose_stats": {
+        "count": 100,
+        "mean_ms": 13.94,
+        "min_ms": 12.76,
+        "max_ms": 18.96,
+        "median_ms": 13.55,
+        "p95_ms": 16.59,
+        "fps": 71.73
+      },
+      "face_stats": {
+        "count": 100,
+        "mean_ms": 2.53,
+        "min_ms": 1.93,
+        "max_ms": 4.6,
+        "median_ms": 2.35,
+        "p95_ms": 3.65,
+        "fps": 395.3
+      },
+      "geometry_stats": {
+        "count": 100,
+        "mean_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 0.2,
+        "median_ms": 0.11,
+        "p95_ms": 0.13,
+        "fps": 8892.29
+      },
+      "expression_stats": {
+        "count": 100,
+        "mean_ms": 0.01,
+        "min_ms": 0.0,
+        "max_ms": 0.03,
+        "median_ms": 0.01,
+        "p95_ms": 0.01,
+        "fps": 159846.48
+      },
+      "end_to_end_stats": {
+        "count": 100,
+        "mean_ms": 16.25,
+        "min_ms": 14.99,
+        "max_ms": 24.08,
+        "median_ms": 15.93,
+        "p95_ms": 17.68,
+        "fps": 61.52
+      },
+      "sustained_fps": 61.41,
+      "cpu_mean_pct": 98.0,
+      "cpu_peak_pct": 106.3,
+      "memory_start_rss_mb": 207.77,
+      "memory_peak_rss_mb": 208.25,
+      "memory_end_rss_mb": 208.25,
+      "memory_delta_mb": 0.49,
+      "total_frames_processed": 100,
+      "total_duration_sec": 1.63
+    },
+    {
+      "profile_name": "Entry-Level Thin Client (Single Core)",
+      "cpu_affinity": [
+        0
+      ],
+      "resolution": [
+        640,
+        480
+      ],
+      "target_fps": 10.0,
+      "pose_stats": {
+        "count": 100,
+        "mean_ms": 15.31,
+        "min_ms": 13.67,
+        "max_ms": 24.45,
+        "median_ms": 15.07,
+        "p95_ms": 17.01,
+        "fps": 65.31
+      },
+      "face_stats": {
+        "count": 100,
+        "mean_ms": 2.48,
+        "min_ms": 1.91,
+        "max_ms": 4.98,
+        "median_ms": 2.22,
+        "p95_ms": 3.76,
+        "fps": 403.77
+      },
+      "geometry_stats": {
+        "count": 100,
+        "mean_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 0.28,
+        "median_ms": 0.11,
+        "p95_ms": 0.13,
+        "fps": 8735.99
+      },
+      "expression_stats": {
+        "count": 100,
+        "mean_ms": 0.01,
+        "min_ms": 0.01,
+        "max_ms": 0.12,
+        "median_ms": 0.01,
+        "p95_ms": 0.01,
+        "fps": 138255.26
+      },
+      "end_to_end_stats": {
+        "count": 100,
+        "mean_ms": 18.69,
+        "min_ms": 16.56,
+        "max_ms": 30.22,
+        "median_ms": 18.22,
+        "p95_ms": 20.4,
+        "fps": 53.52
+      },
+      "sustained_fps": 53.39,
+      "cpu_mean_pct": 86.0,
+      "cpu_peak_pct": 88.7,
+      "memory_start_rss_mb": 207.84,
+      "memory_peak_rss_mb": 208.29,
+      "memory_end_rss_mb": 208.29,
+      "memory_delta_mb": 0.45,
+      "total_frames_processed": 100,
+      "total_duration_sec": 1.87
+    }
+  ],
+  "stability": {
+    "total_frames": 300,
+    "total_duration_sec": 21.71,
+    "start_rss_mb": 207.23,
+    "end_rss_mb": 207.87,
+    "peak_rss_mb": 207.87,
+    "rss_drift_mb_per_hour": 106.88,
+    "mean_latency_ms": 43.58,
+    "p95_latency_ms": 69.24,
+    "dropped_frames": 21,
+    "passed_leak_check": true
+  }
+}
