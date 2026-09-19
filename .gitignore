@@ -44,8 +44,10 @@ desktop.ini
 
 # ─── PyInstaller ──────────────────────────────────────────────────────────────
 *.spec
+!installer/EdgeErgoAgent.spec
 installer/output/
 installer/build/
+installer/dist/
 
 # ─── Test / coverage ─────────────────────────────────────────────────────────
 .pytest_cache/

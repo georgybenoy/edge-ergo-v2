@@ -51,10 +51,22 @@ from edge_agent.vision.preprocessing import (
 logger = logging.getLogger(__name__)
 
 
+import sys
+
 # ── Default model path ────────────────────────────────────────────────────────
 
-_DEFAULT_MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
-DEFAULT_POSE_MODEL_PATH = _DEFAULT_MODEL_DIR / "pose_landmarker_lite.task"
+def _get_default_pose_model_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_dir = Path(sys._MEIPASS)
+        for cand in [
+            base_dir / "edge_agent" / "models" / "pose_landmarker_lite.task",
+            base_dir / "models" / "pose_landmarker_lite.task",
+        ]:
+            if cand.exists():
+                return cand
+    return Path(__file__).resolve().parent.parent / "models" / "pose_landmarker_lite.task"
+
+DEFAULT_POSE_MODEL_PATH = _get_default_pose_model_path()
 
 
 # ── Ergonomic landmark groups ────────────────────────────────────────────────

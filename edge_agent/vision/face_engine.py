@@ -57,10 +57,22 @@ from edge_agent.vision.preprocessing import (
 
 logger = logging.getLogger(__name__)
 
+import sys
+
 # ── Model Path ────────────────────────────────────────────────────────────────
 
-_DEFAULT_MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
-DEFAULT_FACE_MODEL_PATH = _DEFAULT_MODEL_DIR / "face_landmarker.task"
+def _get_default_face_model_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_dir = Path(sys._MEIPASS)
+        for cand in [
+            base_dir / "edge_agent" / "models" / "face_landmarker.task",
+            base_dir / "models" / "face_landmarker.task",
+        ]:
+            if cand.exists():
+                return cand
+    return Path(__file__).resolve().parent.parent / "models" / "face_landmarker.task"
+
+DEFAULT_FACE_MODEL_PATH = _get_default_face_model_path()
 
 
 # ── Canonical Landmark Indices (468/478 Face Mesh) ────────────────────────────
