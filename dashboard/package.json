@@ -1,0 +1,28 @@
+{
+  "name": "edgeergo-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EdgeErgo Central Dashboard — React + Vite + TypeScript + Tailwind CSS. Full scaffold in Phase 14.",
+  "scripts": {
+    "dev": "echo 'Dashboard not scaffolded yet — see Phase 14'",
+    "build": "echo 'Dashboard not scaffolded yet — see Phase 14'"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "comments": {
+    "planned_dependencies": {
+      "react": "^18.x",
+      "react-dom": "^18.x",
+      "react-router-dom": "^6.x",
+      "recharts": "^2.x",
+      "tailwindcss": "^4.x",
+      "@tailwindcss/vite": "^4.x",
+      "typescript": "^5.x",
+      "vite": "^6.x",
+      "@vitejs/plugin-react": "^4.x"
+    }
+  }
+}

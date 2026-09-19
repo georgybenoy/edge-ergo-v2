@@ -1,0 +1,64 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# ─── Node / Dashboard ────────────────────────────────────────────────────────
+node_modules/
+dashboard/dist/
+dashboard/build/
+.npm
+.yarn/
+
+# ─── SQLite databases ────────────────────────────────────────────────────────
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ─── IDE / OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Secrets / env files ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── PyInstaller ──────────────────────────────────────────────────────────────
+*.spec
+installer/output/
+installer/build/
+
+# ─── Test / coverage ─────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ─── Privacy guard — NEVER commit raw media ──────────────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.mp4
+*.avi
+*.mov
+*.mkv
