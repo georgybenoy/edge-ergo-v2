@@ -80,4 +80,34 @@ export const DashboardApi = {
   getDevices: () => {
     return request<DeviceItem[]>(`${API_BASE}/devices`);
   },
+
+  downloadCsv: async (startDate?: string, endDate?: string, deviceId?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    if (deviceId) params.append("device_id", deviceId);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`/api/v1/export/csv${query}`);
+    if (!res.ok) throw new Error("Failed to generate CSV export from central server.");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute(
+      "download",
+      `edgeergo_telemetry_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  },
+
+  getPeriodicReport: (reportType: "daily" | "weekly" | "monthly" = "weekly") => {
+    return request<any>(`/api/v1/reports/${reportType}`);
+  },
+
+  openReportHtml: (reportType: "daily" | "weekly" | "monthly" = "weekly") => {
+    window.open(`/api/v1/reports/${reportType}/html`, "_blank");
+  },
 };

@@ -546,3 +546,63 @@ class CentralDatabase:
                     (limit,),
                 )
             return [dict(r) for r in cursor.fetchall()]
+
+    # ── Report Operations (PRD §106, Phase 15) ────────────────────────────────
+
+    def save_report(
+        self,
+        report_id: str,
+        report_type: str,
+        start_date: str,
+        end_date: str,
+        data_json: str,
+        generated_at: Optional[str] = None,
+    ) -> bool:
+        """Save a generated periodic report record."""
+        now_ts = generated_at or _now_iso()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO reports (
+                    report_id, report_type, start_date, end_date, generated_at, data_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (report_id, report_type, start_date, end_date, now_ts, data_json),
+            )
+        return True
+
+    def get_report(self, report_id: str) -> Optional[dict[str, Any]]:
+        """Retrieve a specific report by report_id."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM reports WHERE report_id = ?", (report_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_reports(
+        self, report_type: Optional[str] = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """List generated reports, optionally filtered by report_type."""
+        with self.get_connection() as conn:
+            if report_type:
+                cursor = conn.execute(
+                    """
+                    SELECT report_id, report_type, start_date, end_date, generated_at
+                    FROM reports
+                    WHERE report_type = ?
+                    ORDER BY generated_at DESC
+                    LIMIT ?
+                    """,
+                    (report_type, limit),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT report_id, report_type, start_date, end_date, generated_at
+                    FROM reports
+                    ORDER BY generated_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            return [dict(r) for r in cursor.fetchall()]

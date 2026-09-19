@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from central_server.api.dashboard import router as dashboard_router
 from central_server.api.edge import router as edge_router
+from central_server.api.reports import router as reports_router
 from central_server.database.database import CentralDatabase
 
 # PRD §90: Configure central logging
@@ -74,6 +75,7 @@ def create_app(
     # 3. Mount API Routers
     app.include_router(edge_router)
     app.include_router(dashboard_router)
+    app.include_router(reports_router)
 
     # 4. System Health Check Endpoint
     @app.get(

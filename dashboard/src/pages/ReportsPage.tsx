@@ -1,42 +1,63 @@
-import React, { useState } from "react";
-import { FileText, Download, FileSpreadsheet, Check, Calendar, ShieldCheck } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { FileText, Download, FileSpreadsheet, Check, Calendar, ShieldCheck, AlertCircle } from "lucide-react";
 import { Card } from "../components/Card";
 import { KPICard } from "../components/KPICard";
+import { DashboardApi } from "../services/api";
 
 export const ReportsPage: React.FC = () => {
   const [downloadingCsv, setDownloadingCsv] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [reportData, setReportData] = useState<any>(null);
 
-  const handleExportCsv = () => {
+  useEffect(() => {
+    const loadReportSummary = async () => {
+      try {
+        const data = await DashboardApi.getPeriodicReport("weekly");
+        setReportData(data);
+      } catch (err: any) {
+        console.warn("Could not load initial weekly report summary:", err);
+      }
+    };
+    loadReportSummary();
+  }, []);
+
+  const handleExportCsv = async () => {
     setDownloadingCsv(true);
-    // Simulate generation or call endpoint
-    setTimeout(() => {
-      // Create and download CSV locally for the user
-      const headers = "Device_ID,Session_ID,Window_Start,RULA_Avg,REBA_Avg,Risk_Level,Dominant_Posture\n";
-      const sample = "NODE-001,S-001,2026-09-19T09:00:00Z,5.2,6.1,HIGH,FORWARD_HEAD\nNODE-002,S-002,2026-09-19T09:00:00Z,2.1,2.4,LOW,NEUTRAL\n";
-      const blob = new Blob([headers + sample], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `edgeergo_ergonomic_report_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setDownloadingCsv(false);
-      setDownloadMessage("CSV report generated and downloaded successfully.");
+    setErrorMessage(null);
+    try {
+      await DashboardApi.downloadCsv();
+      setDownloadMessage("Aggregated telemetry CSV export downloaded successfully.");
       setTimeout(() => setDownloadMessage(null), 4000);
-    }, 600);
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Failed to download CSV export.");
+      setTimeout(() => setErrorMessage(null), 5000);
+    } finally {
+      setDownloadingCsv(false);
+    }
   };
 
-  const handleExportPdf = () => {
-    setDownloadingPdf(true);
-    setTimeout(() => {
-      setDownloadingPdf(false);
-      setDownloadMessage("PDF executive report compilation scheduled (Phase 15 endpoint).");
+  const handleGeneratePdf = () => {
+    try {
+      DashboardApi.openReportHtml("weekly");
+      setDownloadMessage("Opened executive briefing formatted for Print-to-PDF.");
       setTimeout(() => setDownloadMessage(null), 4000);
-    }, 800);
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Failed to open printable report.");
+    }
   };
+
+  const handleAuditCertificate = () => {
+    try {
+      DashboardApi.openReportHtml("monthly");
+      setDownloadMessage("Opened compliance audit certificate.");
+      setTimeout(() => setDownloadMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Failed to open audit certificate.");
+    }
+  };
+
+  const summary = reportData?.summary;
 
   return (
     <div className="space-y-6">
@@ -56,19 +77,18 @@ export const ReportsPage: React.FC = () => {
           <button
             onClick={handleExportCsv}
             disabled={downloadingCsv}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-bg-card hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium shadow-sm"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-bg-card hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium shadow-sm cursor-pointer disabled:opacity-50"
           >
             <FileSpreadsheet className="w-4 h-4 text-status-safe" />
-            <span>{downloadingCsv ? "Generating..." : "Export CSV"}</span>
+            <span>{downloadingCsv ? "Exporting CSV..." : "Export CSV"}</span>
           </button>
 
           <button
-            onClick={handleExportPdf}
-            disabled={downloadingPdf}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-brand-primary text-bg-app hover:opacity-90 text-caption font-semibold transition-opacity shadow-sm"
+            onClick={handleGeneratePdf}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-brand-primary text-bg-app hover:opacity-90 text-caption font-semibold transition-opacity shadow-sm cursor-pointer"
           >
             <FileText className="w-4 h-4" />
-            <span>{downloadingPdf ? "Compiling..." : "Generate PDF"}</span>
+            <span>Generate PDF</span>
           </button>
         </div>
       </div>
@@ -80,29 +100,36 @@ export const ReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Summary KPI Cards */}
+      {errorMessage && (
+        <div className="p-3 rounded-md bg-status-critical/10 border border-status-critical/30 text-caption text-status-critical flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Summary KPI Cards from real weekly report */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           label="Total Telemetry Windows"
-          value="1,420"
+          value={summary?.total_windows ?? 0}
           subtext="analyzed on edge"
         />
         <KPICard
-          label="Risk Mitigation Rate"
-          value="88.4%"
-          delta="+4.2%"
-          subtext="resolved warnings"
+          label="Workers Analyzed"
+          value={summary?.workers_analyzed ?? 0}
+          delta={summary?.workers_analyzed ? `${summary.workers_analyzed} active` : undefined}
+          subtext="in current period"
         />
         <KPICard
           label="OSHA Ergo Compliance"
-          value="96.2%"
-          delta="Optimal"
+          value={`${summary?.posture_compliance_pct ?? 100}%`}
+          delta={summary?.posture_compliance_pct ? (summary.posture_compliance_pct >= 80 ? "Optimal" : "Attention") : "Optimal"}
           subtext="workplace audit grade"
         />
         <KPICard
-          label="Audit Records"
-          value="100%"
-          subtext="zero video stored"
+          label="Break Adherence"
+          value={`${summary?.break_adherence_pct ?? 0}%`}
+          subtext="movement prompts acknowledged"
         />
       </div>
 
@@ -119,11 +146,11 @@ export const ReportsPage: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={handleExportCsv}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium"
+            onClick={handleGeneratePdf}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download CSV Data</span>
+            <span>Open Executive Briefing</span>
           </button>
         </Card>
 
@@ -139,10 +166,10 @@ export const ReportsPage: React.FC = () => {
           </div>
           <button
             onClick={handleExportCsv}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download Telemetry</span>
+            <span>Download CSV Data</span>
           </button>
         </Card>
 
@@ -157,8 +184,8 @@ export const ReportsPage: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={handleExportPdf}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium"
+            onClick={handleAuditCertificate}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover text-caption text-content-primary border border-subtle-border transition-colors font-medium cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download Audit Certificate</span>
