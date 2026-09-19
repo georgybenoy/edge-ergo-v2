@@ -2,27 +2,26 @@
   "name": "edgeergo-dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "EdgeErgo Central Dashboard — React + Vite + TypeScript + Tailwind CSS. Full scaffold in Phase 14.",
+  "type": "module",
+  "description": "EdgeErgo Central Dashboard — React + Vite + TypeScript + Tailwind CSS",
   "scripts": {
-    "dev": "echo 'Dashboard not scaffolded yet — see Phase 14'",
-    "build": "echo 'Dashboard not scaffolded yet — see Phase 14'"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
-  "dependencies": {},
-  "devDependencies": {},
-  "engines": {
-    "node": ">=18.0.0"
+  "dependencies": {
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
-  "comments": {
-    "planned_dependencies": {
-      "react": "^18.x",
-      "react-dom": "^18.x",
-      "react-router-dom": "^6.x",
-      "recharts": "^2.x",
-      "tailwindcss": "^4.x",
-      "@tailwindcss/vite": "^4.x",
-      "typescript": "^5.x",
-      "vite": "^6.x",
-      "@vitejs/plugin-react": "^4.x"
-    }
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
   }
 }

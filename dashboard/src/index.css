@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-app: #000000;
+  --bg-page: #39383D;
+  --bg-card: #1D1D1D;
+  --bg-secondary: #222222;
+  --bg-hover: #2B2B2B;
+
+  --text-primary: #F5F5F5;
+  --text-secondary: #A7A7A7;
+  --text-muted: #707070;
+  --text-disabled: #505050;
+
+  --brand-primary: #D98CB3;
+  --brand-secondary: #A878FF;
+  --brand-accent: #66C7FF;
+
+  --status-safe: #39D98A;
+  --status-attention: #F2C94C;
+  --status-high-risk: #FF6B7A;
+  --status-critical: #FF4D4D;
+
+  --subtle-border: #303030;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1d1d1d;
+}
+::-webkit-scrollbar-thumb {
+  background: #303030;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
+}
+
+/* Base Body Styles */
+body {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle focus rings for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}

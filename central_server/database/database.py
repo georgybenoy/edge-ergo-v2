@@ -459,7 +459,27 @@ class CentralDatabase:
                 ),
             )
 
-            # 6. Update device last_seen
+            # 6. Insert events if provided
+            for ev in payload.get("events", []):
+                ev_id = ev.get("event_id") or str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO events (
+                        event_id, device_id, session_id, timestamp, event_type, event_value, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        ev_id,
+                        device_id,
+                        session_id,
+                        ev.get("timestamp", now_ts),
+                        ev.get("event_type", "INFO"),
+                        ev.get("event_value", ""),
+                        now_ts,
+                    ),
+                )
+
+            # 7. Update device last_seen
             conn.execute("UPDATE devices SET last_seen = ? WHERE device_id = ?", (now_ts, device_id))
 
         logger.info("Persisted telemetry window %s for device %s", window_id, device_id)

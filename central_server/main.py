@@ -16,6 +16,7 @@ from typing import Any, AsyncGenerator, Optional, Union
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from central_server.api.dashboard import router as dashboard_router
 from central_server.api.edge import router as edge_router
 from central_server.database.database import CentralDatabase
 
@@ -70,8 +71,9 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # 3. Mount Edge-facing API Router
+    # 3. Mount API Routers
     app.include_router(edge_router)
+    app.include_router(dashboard_router)
 
     # 4. System Health Check Endpoint
     @app.get(
@@ -87,6 +89,12 @@ def create_app(
             "version": "0.1.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+    # 5. Serve React Dashboard static build if present (PRD §11)
+    dist_path = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
+    if dist_path.exists():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="dashboard")
 
     return app
 
