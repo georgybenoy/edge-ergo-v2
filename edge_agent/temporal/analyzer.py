@@ -241,10 +241,10 @@ class TemporalAnalyzer:
             else:
                 dominant_posture = "NEUTRAL"
         else:
-            avg_rula = 0.0
-            max_rula = 0
-            avg_reba = 0.0
-            max_reba = 0
+            avg_rula = 1.0
+            max_rula = 1
+            avg_reba = 1.0
+            max_reba = 1
             high_risk_pct = 0.0
             posture_counts = {}
             risk_counts = {}

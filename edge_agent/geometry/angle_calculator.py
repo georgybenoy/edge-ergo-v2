@@ -515,6 +515,8 @@ class AngleCalculator:
             return raw
         return self._smoother.update(raw)
 
+    calculate_angles = calculate
+
     def calculate_raw(
         self,
         landmarks: Mapping[str, Any],

@@ -139,12 +139,13 @@ class ExpressionClassifier:
           - Multiple faces detected -> Uncertain / Invalid (single-worker constraint)
           - Low confidence -> Uncertain/Neutral
         """
-        # Case 1: No face in frame
-        if not face_result.is_detected:
+        # Case 1: No face in frame or None result
+        if face_result is None or not getattr(face_result, "is_detected", False):
             self._curvature_history.clear()
-            status = face_result.status or "NO_FACE"
+            status = getattr(face_result, "status", "NO_FACE") if face_result else "NO_FACE"
+            is_mult = getattr(face_result, "is_multiple_faces", False) if face_result else False
             return ExpressionResult(
-                category=ExpressionCategory.UNCERTAIN if face_result.is_multiple_faces else ExpressionCategory.NEUTRAL,
+                category=ExpressionCategory.UNCERTAIN if is_mult else ExpressionCategory.NEUTRAL,
                 confidence=0.0,
                 features=None,
                 timestamp=timestamp,

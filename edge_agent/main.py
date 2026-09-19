@@ -184,9 +184,10 @@ class EdgeAgentController:
 
         # Session tracking
         session_id = f"SESS-{int(time.time())}"
-        device_id = self.config_manager.get_device_id() or "NODE-001"
-        self.db.create_session(session_id, device_id)
-        self.temporal_analyzer.start_session(session_id, time.time())
+        device_id = self.config_manager.config.device_id or "NODE-001"
+        session_start_time = time.time()
+        self.temporal_analyzer.start_session(session_id, session_start_time)
+        telemetry_interval_sec = min(10.0, float(self.config_manager.config.telemetry_window_sec))
 
         try:
             while self._running:
@@ -202,20 +203,21 @@ class EdgeAgentController:
 
                 if rgb is not None:
 
+                    cur_time = time.time()
+
                     # 2. Vision Inference
                     pose_res = self.pose_engine.process_frame(rgb)
                     face_res = self.face_engine.process_frame(rgb)
 
                     # 3. Ergonomics & Posture
-                    posture_params = self.angle_calc.calculate_angles(pose_res.landmarks)
+                    posture_params = self.angle_calc.calculate(pose_res.landmarks, timestamp=cur_time)
                     assessment = assess(posture_params)
                     rula = float(assessment.rula_score)
                     reba = float(assessment.reba_score)
                     risk_cat = assessment.risk_level.value
 
                     # 4. Facial Expression
-                    cur_time = time.time()
-                    expr_res = self.expr_classifier.classify(face_res.features, timestamp=cur_time)
+                    expr_res = self.expr_classifier.classify(face_res, timestamp=cur_time)
                     expr_cat = expr_res.category.value if expr_res else "Neutral"
 
                     # 5. Temporal Posture Persistence & Alert Detection
@@ -254,6 +256,20 @@ class EdgeAgentController:
                             rula, risk_cat, reba, expr_cat, frame_idx,
                         )
 
+                    # Window rollover for telemetry persistence
+                    if (cur_time - session_start_time) >= telemetry_interval_sec:
+                        stats = self.temporal_analyzer.end_session(cur_time)
+                        if stats is not None and stats.total_frames > 0:
+                            try:
+                                sync_id = self.db.save_session_analysis(device_id, stats, expression_category=expr_cat)
+                                logger.info("Persisted telemetry window %s (%d frames, sync_id=%s)", stats.session_id, stats.total_frames, sync_id)
+                                self.server_sync.sync_pending_telemetry(limit=5)
+                            except Exception as e:
+                                logger.warning("Failed to persist telemetry window: %s", e)
+                        session_id = f"SESS-{int(time.time())}"
+                        session_start_time = time.time()
+                        self.temporal_analyzer.start_session(session_id, session_start_time)
+
                 # Regulate frame rate
                 elapsed = time.time() - loop_start
                 sleep_time = max(0.001, frame_interval - elapsed)
@@ -262,6 +278,15 @@ class EdgeAgentController:
         finally:
             if cam is not None:
                 cam.release()
+            # Save any remaining analyzed frames on shutdown
+            stats = self.temporal_analyzer.end_session(time.time())
+            if stats is not None and stats.total_frames > 0:
+                try:
+                    sync_id = self.db.save_session_analysis(device_id, stats)
+                    logger.info("Persisted final session %s to local DB (sync_id=%s)", stats.session_id, sync_id)
+                    self.server_sync.sync_pending_telemetry(limit=5)
+                except Exception as e:
+                    logger.warning("Error saving final session: %s", e)
             self.pose_engine.close()
             self.face_engine.close()
             self.db.close()
