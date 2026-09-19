@@ -32,9 +32,15 @@ class EdgeConfig:
     frame_width: int = 640
     frame_height: int = 480
 
-    # ── Analysis ──────────────────────────────────────────────────────
+    # ── Analysis & Scheduling (PRD §15, §16, §26, §36) ────────────────
     analysis_interval_sec: float = 1.0
     telemetry_window_sec: int = 300  # 5-minute windows
+    monitoring_start_time: str = "09:00"  # HH:MM
+    monitoring_end_time: str = "17:00"    # HH:MM
+    session_interval_min: float = 30.0    # Time between monitoring sessions
+    session_duration_min: float = 5.0     # Duration of active monitoring session
+    persistence_threshold_sec: float = 20.0  # Time condition must persist before warning
+    alert_cooldown_sec: float = 120.0        # Cooldown window before repeating alert for same condition
 
     # ── Server sync ───────────────────────────────────────────────────
     server_url: str = "http://localhost:8000"
