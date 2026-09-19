@@ -3,11 +3,22 @@ EdgeErgo — Vision Module.
 
 Provides:
   - PoseEngine: MediaPipe Pose Landmarker wrapper for ergonomic landmark extraction.
-  - PoseResult, LandmarkPoint: Typed data structures with explicit confidence tracking.
+  - FaceEngine: MediaPipe Face Landmarker wrapper for privacy-preserving facial analysis.
+  - PoseResult, LandmarkPoint: Typed pose data structures with explicit confidence tracking.
+  - FaceResult, FaceFeatures: Normalized scalar facial metrics without raw images.
   - draw_skeleton: Debug/demo skeleton overlay.
   - Preprocessing utilities: Shared frame validation, colour conversion, resize, normalisation.
 """
 
+from edge_agent.vision.face_engine import (
+    DEFAULT_FACE_MODEL_PATH,
+    FaceEngine,
+    FaceFeatures,
+    FaceResult,
+    compute_brow_furrow,
+    compute_eye_aspect_ratio,
+    compute_mouth_metrics,
+)
 from edge_agent.vision.pose_engine import (
     ALL_ERGONOMIC_INDICES,
     DEFAULT_POSE_MODEL_PATH,
@@ -40,9 +51,17 @@ __all__ = [
     "ALL_ERGONOMIC_INDICES",
     "DEFAULT_POSE_MODEL_PATH",
     "draw_skeleton",
+    # Face Engine
+    "FaceEngine",
+    "FaceFeatures",
+    "FaceResult",
+    "DEFAULT_FACE_MODEL_PATH",
+    "compute_eye_aspect_ratio",
+    "compute_mouth_metrics",
+    "compute_brow_furrow",
     # Preprocessing
     "ColorSpace",
-    "PreprocessingConfig",
+    "PreprocessConfig",
     "MEDIAPIPE_PREPROCESSING",
     "convert_color",
     "resize_frame",
