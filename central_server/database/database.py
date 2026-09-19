@@ -21,6 +21,7 @@ import json
 import logging
 from pathlib import Path
 import sqlite3
+import threading
 from typing import Any, Generator, Optional, Sequence, Tuple, Union
 import uuid
 
@@ -137,6 +138,7 @@ class CentralDatabase:
         self.db_path = Path(db_path) if isinstance(db_path, str) and db_path != ":memory:" else db_path
         self._is_memory = str(self.db_path) == ":memory:"
         self._mem_conn: Optional[sqlite3.Connection] = None
+        self._reg_lock = threading.Lock()
 
         if self._is_memory:
             self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -218,52 +220,53 @@ class CentralDatabase:
     ) -> dict[str, Any]:
         """Register a new device or re-register an existing device."""
         now_ts = _now_iso()
-        with self.get_connection() as conn:
-            # Check if device with this name already exists
-            existing = conn.execute(
-                "SELECT * FROM devices WHERE device_name = ?", (device_name,)
-            ).fetchone()
-            if existing:
-                device_id = existing["device_id"]
-                conn.execute(
-                    """
-                    UPDATE devices SET
-                        software_version = ?,
-                        last_seen = ?,
-                        status = 'active',
-                        camera_detected = ?,
-                        camera_index = ?
-                    WHERE device_id = ?
-                    """,
-                    (software_version, now_ts, 1 if camera_detected else 0, camera_index, device_id),
-                )
-            else:
-                device_id = assigned_id or self.get_next_node_id()
-                conn.execute(
-                    """
-                    INSERT INTO devices (
-                        device_id, device_name, software_version, registered_at,
-                        last_seen, status, camera_detected, camera_index
-                    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-                    """,
-                    (
-                        device_id,
-                        device_name,
-                        software_version,
-                        now_ts,
-                        now_ts,
-                        1 if camera_detected else 0,
-                        camera_index,
-                    ),
-                )
+        with self._reg_lock:
+            with self.get_connection() as conn:
+                # Check if device with this name already exists
+                existing = conn.execute(
+                    "SELECT * FROM devices WHERE device_name = ?", (device_name,)
+                ).fetchone()
+                if existing:
+                    device_id = existing["device_id"]
+                    conn.execute(
+                        """
+                        UPDATE devices SET
+                            software_version = ?,
+                            last_seen = ?,
+                            status = 'active',
+                            camera_detected = ?,
+                            camera_index = ?
+                        WHERE device_id = ?
+                        """,
+                        (software_version, now_ts, 1 if camera_detected else 0, camera_index, device_id),
+                    )
+                else:
+                    device_id = assigned_id or self.get_next_node_id()
+                    conn.execute(
+                        """
+                        INSERT INTO devices (
+                            device_id, device_name, software_version, registered_at,
+                            last_seen, status, camera_detected, camera_index
+                        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                        """,
+                        (
+                            device_id,
+                            device_name,
+                            software_version,
+                            now_ts,
+                            now_ts,
+                            1 if camera_detected else 0,
+                            camera_index,
+                        ),
+                    )
 
-        return self.get_device(device_id) or {
-            "device_id": device_id,
-            "device_name": device_name,
-            "software_version": software_version,
-            "registered_at": now_ts,
-            "status": "active",
-        }
+            return self.get_device(device_id) or {
+                "device_id": device_id,
+                "device_name": device_name,
+                "software_version": software_version,
+                "registered_at": now_ts,
+                "status": "active",
+            }
 
     def get_device(self, device_id: str) -> Optional[dict[str, Any]]:
         """Retrieve device record by device_id."""
@@ -298,6 +301,43 @@ class CentralDatabase:
                 (now_ts, status, software_version, device_id),
             )
             return res.rowcount > 0
+
+    def get_device_health_status(
+        self,
+        device_id: str,
+        timeout_sec: float = 120.0,
+        reference_time: Optional[datetime] = None,
+    ) -> str:
+        """Compute whether a node is ONLINE or OFFLINE based on heartbeat freshness (PRD §46)."""
+        dev = self.get_device(device_id)
+        if not dev or not dev.get("last_seen"):
+            return "OFFLINE"
+
+        ref = reference_time or datetime.now(timezone.utc)
+        try:
+            ls_dt = datetime.fromisoformat(dev["last_seen"].replace("Z", "+00:00"))
+            elapsed = (ref - ls_dt).total_seconds()
+            if elapsed <= timeout_sec:
+                return "ONLINE"
+            return "OFFLINE"
+        except Exception:
+            return "OFFLINE"
+
+    def list_devices_with_health(
+        self,
+        timeout_sec: float = 120.0,
+        reference_time: Optional[datetime] = None,
+    ) -> list[dict[str, Any]]:
+        """List all registered devices with computed health status (ONLINE vs OFFLINE)."""
+        devices = self.list_devices()
+        result = []
+        for d in devices:
+            d_copy = dict(d)
+            d_copy["health_status"] = self.get_device_health_status(
+                d["device_id"], timeout_sec=timeout_sec, reference_time=reference_time
+            )
+            result.append(d_copy)
+        return result
 
     # ── Telemetry Window Operations (PRD §40, §48, §89) ──────────────────────
 
