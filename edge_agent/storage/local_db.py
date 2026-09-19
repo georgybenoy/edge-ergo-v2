@@ -88,9 +88,11 @@ CREATE TABLE IF NOT EXISTS configuration (
 
 -- Indices for performance
 CREATE INDEX IF NOT EXISTS idx_session_start ON session(start_time);
+CREATE INDEX IF NOT EXISTS idx_session_device ON session(device_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_session ON assessment(session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_record ON sync_queue(record_id);
 """
 
 

@@ -57,12 +57,13 @@ class Frame:
         index:     Sequential frame counter since the camera was opened.
     """
 
-    __slots__ = ("image", "timestamp", "index")
+    __slots__ = ("image", "timestamp", "index", "_rgb")
 
     def __init__(self, image: np.ndarray, timestamp: float, index: int) -> None:
         self.image = image
         self.timestamp = timestamp
         self.index = index
+        self._rgb: Optional[np.ndarray] = None
 
     @property
     def height(self) -> int:
@@ -75,9 +76,12 @@ class Frame:
     def to_rgb(self) -> np.ndarray:
         """Return the frame as an RGB array (MediaPipe expects RGB).
 
-        The original BGR image is not mutated.
+        Caches the converted array to eliminate redundant allocations across
+        vision models within the same processing cycle.
         """
-        return cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+        if self._rgb is None:
+            self._rgb = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+        return self._rgb
 
     def resized(self, width: int, height: int) -> np.ndarray:
         """Return a resized copy of the BGR image.

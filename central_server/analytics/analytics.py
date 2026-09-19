@@ -43,42 +43,121 @@ class AnalyticsEngine:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        """Compute aggregated ergonomic & expression KPIs per registered workstation."""
+        """Compute aggregated ergonomic & expression KPIs per registered workstation in a single batch pass."""
         devices = self.db.list_devices_with_health(timeout_sec=120.0)
+        if not devices:
+            return []
+
+        # Single batch query across all devices in range (eliminates N+1 query pattern)
+        query = """
+            SELECT w.device_id, w.window_id, w.session_id, w.window_start, w.window_end,
+                   w.breaks_recommended, w.breaks_acknowledged,
+                   p.average_rula, p.maximum_rula, p.average_reba, p.maximum_reba,
+                   p.high_risk_percentage, p.dominant_posture,
+                   e.neutral_percentage, e.positive_percentage, e.negative_percentage,
+                   e.reduced_expression_percentage
+            FROM telemetry_windows w
+            JOIN posture_metrics p ON w.window_id = p.window_id
+            JOIN expression_metrics e ON w.window_id = e.window_id
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if start_date:
+            query += " AND w.window_start >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND w.window_end <= ?"
+            params.append(end_date)
+
+        query += " ORDER BY w.window_start ASC"
+
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(query, tuple(params))
+            all_rows = cursor.fetchall()
+
+        rows_by_device: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+        for r in all_rows:
+            rows_by_device[r["device_id"]].append(dict(r))
+
         summaries: list[dict[str, Any]] = []
 
         for dev in devices:
             device_id = dev["device_id"]
-            metrics = self.aggregator.aggregate(
-                device_id=device_id,
-                start_date=start_date,
-                end_date=end_date,
-            )
+            rows = rows_by_device.get(device_id, [])
+            total_windows = len(rows)
 
-            # Determine primary facial expression category
-            expr_dist = metrics.expression_distribution
-            primary_expr = (
-                max(expr_dist, key=lambda k: expr_dist[k]).replace("_percentage", "").capitalize()
-                if any(expr_dist.values())
-                else "Neutral"
-            )
+            if total_windows == 0:
+                summaries.append({
+                    "device_id": device_id,
+                    "device_name": dev["device_name"],
+                    "status": dev["health_status"],
+                    "software_version": dev["software_version"],
+                    "total_windows": 0,
+                    "average_rula": 0.0,
+                    "maximum_rula": 0,
+                    "average_reba": 0.0,
+                    "maximum_reba": 0,
+                    "high_risk_percentage": 0.0,
+                    "dominant_posture": "NEUTRAL",
+                    "primary_expression": "Neutral",
+                    "breaks_recommended": 0,
+                    "breaks_acknowledged": 0,
+                    "break_compliance_rate": 100.0,
+                })
+                continue
+
+            rula_scores = [float(r["average_rula"]) for r in rows]
+            max_rulas = [int(r["maximum_rula"]) for r in rows]
+            reba_scores = [float(r["average_reba"]) for r in rows]
+            max_rebas = [int(r["maximum_reba"]) for r in rows]
+            high_risk_pcts = [float(r["high_risk_percentage"]) for r in rows]
+
+            avg_rula = round(sum(rula_scores) / total_windows, 2)
+            peak_rula = max(max_rulas)
+            avg_reba = round(sum(reba_scores) / total_windows, 2)
+            peak_reba = max(max_rebas)
+            avg_high_risk = round(sum(high_risk_pcts) / total_windows, 2)
+
+            posture_counts: dict[str, int] = collections.Counter(r["dominant_posture"] for r in rows)
+            non_neutral = [p for p in posture_counts if p not in ("NEUTRAL", "NO_PERSON_DETECTED")]
+            if non_neutral:
+                dominant_posture = max(non_neutral, key=lambda k: posture_counts[k])
+            else:
+                dominant_posture = max(posture_counts, key=lambda k: posture_counts[k])
+
+            neutral_avg = sum(float(r["neutral_percentage"]) for r in rows) / total_windows
+            pos_avg = sum(float(r["positive_percentage"]) for r in rows) / total_windows
+            neg_avg = sum(float(r["negative_percentage"]) for r in rows) / total_windows
+            red_avg = sum(float(r["reduced_expression_percentage"]) for r in rows) / total_windows
+
+            expr_map = {
+                "Neutral": neutral_avg,
+                "Positive": pos_avg,
+                "Negative": neg_avg,
+                "Reduced": red_avg,
+            }
+            primary_expr = max(expr_map, key=lambda k: expr_map[k])
+
+            breaks_rec = sum(int(r["breaks_recommended"]) for r in rows)
+            breaks_ack = sum(int(r["breaks_acknowledged"]) for r in rows)
+            compliance = round((breaks_ack / breaks_rec * 100.0), 1) if breaks_rec > 0 else 100.0
 
             summaries.append({
                 "device_id": device_id,
                 "device_name": dev["device_name"],
-                "status": dev["health_status"],  # ONLINE or OFFLINE
+                "status": dev["health_status"],
                 "software_version": dev["software_version"],
-                "total_windows": metrics.total_windows,
-                "average_rula": metrics.average_rula,
-                "maximum_rula": metrics.maximum_rula,
-                "average_reba": metrics.average_reba,
-                "maximum_reba": metrics.maximum_reba,
-                "high_risk_percentage": metrics.high_risk_percentage,
-                "dominant_posture": metrics.dominant_posture,
+                "total_windows": total_windows,
+                "average_rula": avg_rula,
+                "maximum_rula": peak_rula,
+                "average_reba": avg_reba,
+                "maximum_reba": peak_reba,
+                "high_risk_percentage": avg_high_risk,
+                "dominant_posture": dominant_posture,
                 "primary_expression": primary_expr,
-                "breaks_recommended": metrics.total_breaks_recommended,
-                "breaks_acknowledged": metrics.total_breaks_acknowledged,
-                "break_compliance_rate": metrics.break_compliance_rate,
+                "breaks_recommended": breaks_rec,
+                "breaks_acknowledged": breaks_ack,
+                "break_compliance_rate": compliance,
             })
 
         return summaries

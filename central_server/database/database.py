@@ -114,10 +114,13 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);
 CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_windows_device ON telemetry_windows(device_id, window_start);
+CREATE INDEX IF NOT EXISTS idx_windows_time_range ON telemetry_windows(window_start, window_end);
+CREATE INDEX IF NOT EXISTS idx_windows_created ON telemetry_windows(created_at);
 CREATE INDEX IF NOT EXISTS idx_windows_session ON telemetry_windows(session_id);
 CREATE INDEX IF NOT EXISTS idx_posture_window ON posture_metrics(window_id);
 CREATE INDEX IF NOT EXISTS idx_expression_window ON expression_metrics(window_id);
 CREATE INDEX IF NOT EXISTS idx_events_device ON events(device_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 """
 
 
@@ -144,6 +147,7 @@ class CentralDatabase:
             self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._mem_conn.row_factory = sqlite3.Row
             self._mem_conn.execute("PRAGMA foreign_keys = ON;")
+            self._mem_conn.execute("PRAGMA cache_size = -64000;")
         elif isinstance(self.db_path, Path):
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -160,6 +164,7 @@ class CentralDatabase:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA cache_size = -64000;")
         return conn
 
     @contextmanager
