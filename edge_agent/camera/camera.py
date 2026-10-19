@@ -11,6 +11,7 @@ Dependencies: cv2, numpy — no MediaPipe, no ergonomics, no storage.
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from enum import Enum, auto
 from typing import Generator
@@ -113,10 +114,15 @@ def list_available_cameras(max_index: int = 8) -> list[int]:
     This does a quick open-then-close for each index, so it may take
     a moment on systems with many virtual devices.
     """
+    backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
     available: list[int] = []
     for idx in range(max_index):
-        cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-        if cap.isOpened():
+        cap = cv2.VideoCapture(idx, backend)
+        opened = cap.isOpened()
+        if not opened and backend != cv2.CAP_ANY:
+            cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
+            opened = cap.isOpened()
+        if opened:
             available.append(idx)
             cap.release()
         else:
@@ -224,9 +230,14 @@ class Camera:
             )
 
         logger.info("Opening camera %d ...", self._camera_index)
-        cap = cv2.VideoCapture(self._camera_index, cv2.CAP_ANY)
+        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        cap = cv2.VideoCapture(self._camera_index, backend)
+        opened = cap.isOpened()
+        if not opened and backend != cv2.CAP_ANY:
+            cap = cv2.VideoCapture(self._camera_index, cv2.CAP_ANY)
+            opened = cap.isOpened()
 
-        if not cap.isOpened():
+        if not opened:
             cap.release()
             # Distinguish "not found" from "permission denied" as best we
             # can — OpenCV doesn't expose the OS error, so we probe the

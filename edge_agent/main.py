@@ -195,8 +195,13 @@ class EdgeAgentController:
 
                 # 1. Fetch frame
                 if cam is not None and cam.is_open:
-                    cf = cam.read_frame()
-                    rgb = cf.to_rgb() if cf is not None else None
+                    try:
+                        cf = cam.read_frame()
+                        rgb = cf.to_rgb() if cf is not None else None
+                    except Exception as e:
+                        logger.warning("Transient camera read error: %s. Using fallback frame.", e)
+                        rgb = np.zeros((480, 640, 3), dtype=np.uint8)
+                        time.sleep(0.1)
                 else:
                     # Synthetic 640x480 RGB frame for headless/test operation
                     rgb = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -309,7 +314,7 @@ def main() -> None:
         description="EdgeErgo — Privacy-Preserving Edge AI Ergonomic & Expression Monitoring Agent"
     )
     parser.add_argument("--config", type=str, help="Path to local configuration JSON file")
-    parser.add_argument("--server", type=str, help="Central Server address (e.g. http://localhost:8000)")
+    parser.add_argument("--server", "--server-url", dest="server", type=str, help="Central Server address (e.g. http://localhost:8000)")
     parser.add_argument("--device-name", type=str, help="Custom workstation or desk label")
     parser.add_argument("--headless", action="store_true", help="Run without PySide6 desktop overlay")
     parser.add_argument("--no-camera", action="store_true", help="Run with synthetic test frames without physical camera")
