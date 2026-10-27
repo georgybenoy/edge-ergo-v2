@@ -64,3 +64,11 @@ htmlcov/
 *.avi
 *.mov
 *.mkv
+
+# Whitelist project brand assets & documentation graphics
+!edge_agent/assets/
+!edge_agent/assets/**
+!docs/assets/
+!docs/assets/**
+!dashboard/public/
+!dashboard/public/**

@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="edge_agent/assets/logo.png" width="130" alt="EdgeErgo Logo" style="border-radius: 22px; box-shadow: 0 8px 24px rgba(0, 242, 254, 0.25);" />
+<a href="#-overview">
+  <img src="docs/assets/banner.png" width="100%" alt="EdgeErgo — Privacy-Preserving Distributed Edge AI for Ergonomic Evaluation" style="border-radius: 14px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);" />
+</a>
 
-# EdgeErgo
-
-### **Privacy-Preserving Distributed Edge AI for Real-Time Ergonomic Evaluation & Enterprise Well-Being Intelligence**
+<br/>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
