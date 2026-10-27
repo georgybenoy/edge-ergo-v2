@@ -423,3 +423,16 @@ class TestSyncWorker:
         time.sleep(0.1)
         worker.stop()
         assert not worker.is_running
+
+    def test_sync_worker_and_server_sync_is_busy(
+        self,
+        temp_config: ConfigManager,
+        mem_db: LocalDatabase,
+    ) -> None:
+        sync = ServerSync(config_manager=temp_config, local_db=mem_db)
+        assert hasattr(sync, "is_busy")
+        assert sync.is_busy() is False
+
+        worker = SyncWorker(server_sync=sync, interval_sec=0.05)
+        assert hasattr(worker, "is_busy")
+        assert worker.is_busy() is False

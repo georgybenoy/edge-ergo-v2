@@ -154,6 +154,11 @@ class ServerSync:
         self.config_manager = config_manager
         self.local_db = local_db
         self.timeout_sec = timeout_sec
+        self._is_syncing: bool = False
+
+    def is_busy(self) -> bool:
+        """Return True if an upload or synchronization operation is active."""
+        return getattr(self, "_is_syncing", False)
 
     @property
     def server_url(self) -> str:
@@ -260,81 +265,85 @@ class ServerSync:
             logger.debug("Sync skipped: Edge Node has no registered device_id.")
             return 0
 
-        pending_items = self.local_db.get_pending_sync_records(limit=limit)
-        if not pending_items:
-            return 0
+        self._is_syncing = True
+        try:
+            pending_items = self.local_db.get_pending_sync_records(limit=limit)
+            if not pending_items:
+                return 0
 
-        synced_count = 0
-        endpoint = f"{self.server_url}/api/v1/edge/assessment"
-        now_ts = time.time()
-        cfg = self.config_manager.config
+            synced_count = 0
+            endpoint = f"{self.server_url}/api/v1/edge/assessment"
+            now_ts = time.time()
+            cfg = self.config_manager.config
 
-        for item in pending_items:
-            sync_id = item["sync_id"]
-            record_id = item["record_id"]
-            retry_count = item["retry_count"]
-            last_attempt_str = item["last_attempt"]
+            for item in pending_items:
+                sync_id = item["sync_id"]
+                record_id = item["record_id"]
+                retry_count = item["retry_count"]
+                last_attempt_str = item["last_attempt"]
 
-            # Exponential backoff check
-            if last_attempt_str and retry_count > 0:
-                try:
-                    last_attempt_dt = datetime.fromisoformat(last_attempt_str.replace("Z", "+00:00"))
-                    last_attempt_sec = last_attempt_dt.timestamp()
-                except Exception:
-                    last_attempt_sec = 0.0
+                # Exponential backoff check
+                if last_attempt_str and retry_count > 0:
+                    try:
+                        last_attempt_dt = datetime.fromisoformat(last_attempt_str.replace("Z", "+00:00"))
+                        last_attempt_sec = last_attempt_dt.timestamp()
+                    except Exception:
+                        last_attempt_sec = 0.0
 
-                backoff_delay = compute_backoff_delay(
-                    retry_count=retry_count,
-                    base_sec=cfg.backoff_base_sec,
-                    max_sec=cfg.backoff_max_sec,
-                )
-                if (now_ts - last_attempt_sec) < backoff_delay:
-                    logger.debug(
-                        "Sync item %s in backoff window (retry=%d, wait=%.1fs); skipping.",
-                        sync_id, retry_count, backoff_delay,
+                    backoff_delay = compute_backoff_delay(
+                        retry_count=retry_count,
+                        base_sec=cfg.backoff_base_sec,
+                        max_sec=cfg.backoff_max_sec,
                     )
+                    if (now_ts - last_attempt_sec) < backoff_delay:
+                        logger.debug(
+                            "Sync item %s in backoff window (retry=%d, wait=%.1fs); skipping.",
+                            sync_id, retry_count, backoff_delay,
+                        )
+                        continue
+
+                # Fetch session data from local DB
+                session = self.local_db.get_session(record_id)
+                if not session:
+                    logger.warning("Session %s not found for sync_id %s; marking FAILED.", record_id, sync_id)
+                    self.local_db.update_sync_status(sync_id, "FAILED")
                     continue
 
-            # Fetch session data from local DB
-            session = self.local_db.get_session(record_id)
-            if not session:
-                logger.warning("Session %s not found for sync_id %s; marking FAILED.", record_id, sync_id)
-                self.local_db.update_sync_status(sync_id, "FAILED")
-                continue
+                assessment = self.local_db.get_latest_assessment(record_id)
+                events = self.local_db.get_events_for_session(record_id)
 
-            assessment = self.local_db.get_latest_assessment(record_id)
-            events = self.local_db.get_events_for_session(record_id)
+                # Build Telemetry Window JSON payload
+                payload = build_telemetry_window_payload(session, assessment, events, device_id)
+                window_id = payload["window_id"]
 
-            # Build Telemetry Window JSON payload
-            payload = build_telemetry_window_payload(session, assessment, events, device_id)
-            window_id = payload["window_id"]
+                # Mark item IN_PROGRESS
+                self.local_db.update_sync_status(sync_id, "IN_PROGRESS")
 
-            # Mark item IN_PROGRESS
-            self.local_db.update_sync_status(sync_id, "IN_PROGRESS")
+                # Upload to server
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Idempotency-Key": window_id,
+                }
 
-            # Upload to server
-            headers = {
-                "Content-Type": "application/json",
-                "X-Idempotency-Key": window_id,
-            }
+                try:
+                    with httpx.Client(timeout=self.timeout_sec) as client:
+                        resp = client.post(endpoint, json=payload, headers=headers)
+                        if resp.status_code in (200, 201, 204, 409):
+                            # 409 Conflict indicates server already has this idempotent window -> mark SYNCED
+                            self.local_db.update_sync_status(sync_id, "SYNCED")
+                            self.local_db.update_device_sync(device_id)
+                            synced_count += 1
+                            logger.info("Successfully synced telemetry window %s (sync_id %s)", window_id, sync_id)
+                        else:
+                            logger.warning("Server rejected telemetry window %s: HTTP %d", window_id, resp.status_code)
+                            self.local_db.update_sync_status(sync_id, "PENDING", retry_increment=True)
+                except (httpx.RequestError, Exception) as exc:
+                    logger.debug("Network failure syncing window %s: %s", window_id, exc)
+                    self.local_db.update_sync_status(sync_id, "PENDING", retry_increment=True)
 
-            try:
-                with httpx.Client(timeout=self.timeout_sec) as client:
-                    resp = client.post(endpoint, json=payload, headers=headers)
-                    if resp.status_code in (200, 201, 204, 409):
-                        # 409 Conflict indicates server already has this idempotent window -> mark SYNCED
-                        self.local_db.update_sync_status(sync_id, "SYNCED")
-                        self.local_db.update_device_sync(device_id)
-                        synced_count += 1
-                        logger.info("Successfully synced telemetry window %s (sync_id %s)", window_id, sync_id)
-                    else:
-                        logger.warning("Server rejected telemetry window %s: HTTP %d", window_id, resp.status_code)
-                        self.local_db.update_sync_status(sync_id, "PENDING", retry_increment=True)
-            except (httpx.RequestError, Exception) as exc:
-                logger.debug("Network failure syncing window %s: %s", window_id, exc)
-                self.local_db.update_sync_status(sync_id, "PENDING", retry_increment=True)
-
-        return synced_count
+            return synced_count
+        finally:
+            self._is_syncing = False
 
     # ── Remote Config Pull (PRD §16, §47) ─────────────────────────────────────
 
@@ -381,6 +390,10 @@ class SyncWorker:
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def is_busy(self) -> bool:
+        """Return True if background sync or ServerSync is active."""
+        return getattr(self.server_sync, "is_busy", lambda: False)()
 
     def start(self) -> None:
         """Start the background sync loop."""

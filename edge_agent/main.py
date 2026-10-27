@@ -233,7 +233,15 @@ class EdgeAgentController:
                 if rgb is not None:
                     try:
                         cur_time = time.time()
-                        sync_stat = "Synced ●" if not self.server_sync.is_busy() else "Syncing..."
+                        is_syncing = False
+                        if hasattr(self, "server_sync") and self.server_sync is not None:
+                            busy_fn = getattr(self.server_sync, "is_busy", None)
+                            if callable(busy_fn):
+                                try:
+                                    is_syncing = bool(busy_fn())
+                                except Exception:
+                                    is_syncing = False
+                        sync_stat = "Syncing..." if is_syncing else "Connected"
                         last_str = time.strftime("%H:%M:%S", time.localtime(cur_time))
 
                         # 2. Vision Inference
