@@ -44,6 +44,27 @@ ASCII_BANNER = r"""
 """
 
 
+def validate_workstation_name(raw_name: str) -> str:
+    """Validate and sanitize workstation or desk label.
+
+    Rules:
+      - Cannot be empty or whitespace only.
+      - Maximum length: 100 characters (PRD API contract).
+      - Cannot contain ASCII control characters.
+
+    Raises:
+      ValueError if input is invalid.
+    """
+    name = raw_name.strip()
+    if not name:
+        raise ValueError("Workstation name cannot be empty.")
+    if len(name) > 100:
+        raise ValueError("Workstation name must not exceed 100 characters.")
+    if any(ord(c) < 32 or ord(c) == 127 for c in name):
+        raise ValueError("Workstation name cannot contain control characters.")
+    return name
+
+
 def normalize_server_url(raw_input: str, default_port: int = DEFAULT_PORT) -> str:
     """Normalize raw server input (IP, host, or full URL) into a valid HTTP/HTTPS URL.
 
@@ -72,6 +93,7 @@ def normalize_server_url(raw_input: str, default_port: int = DEFAULT_PORT) -> st
         if scheme not in ("http", "https"):
             raise ValueError(f"Invalid protocol scheme '{scheme}'. Only http:// and https:// are supported.")
     else:
+        scheme = "http"
         s = f"http://{s}"
 
     parsed = urllib.parse.urlsplit(s)
@@ -80,17 +102,30 @@ def normalize_server_url(raw_input: str, default_port: int = DEFAULT_PORT) -> st
     if not netloc:
         raise ValueError(f"Invalid server address '{raw_input}'. Hostname or IP missing.")
 
+    if " " in netloc or "\t" in netloc or "\r" in netloc or "\n" in netloc:
+        raise ValueError(f"Invalid server address '{raw_input}'. Hostname or IP cannot contain whitespace.")
+
     # Determine if port is present in netloc (handling IPv6 brackets safely)
     if netloc.startswith("["):
         if "]" in netloc:
             post_bracket = netloc.split("]")[1]
             has_port = ":" in post_bracket
+            port_str = post_bracket.split(":")[1] if has_port else ""
         else:
             has_port = False
+            port_str = ""
     else:
         has_port = ":" in netloc
+        port_str = netloc.split(":")[1] if has_port else ""
 
-    if not has_port:
+    if has_port:
+        try:
+            port_num = int(port_str)
+            if not (1 <= port_num <= 65535):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid port '{port_str}'. Port must be an integer between 1 and 65535.")
+    else:
         if scheme == "http":
             netloc = f"{netloc}:{default_port}"
 
@@ -127,7 +162,7 @@ def check_server_health(
             return True, data
         else:
             return False, f"Server returned HTTP {resp.status_code} ({resp.reason_phrase})"
-    except httpx.ConnectTimeout:
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException):
         return False, f"Connection timed out after {timeout_sec:.1f}s. Server is not responding."
     except httpx.ConnectError:
         return False, "Connection refused or unreachable. Ensure the Central Server is running and accessible."
@@ -221,7 +256,13 @@ def run_interactive_setup(
             print_func(f"[!] Warning: Invalid CLI --server URL: {exc}")
             current_server_url = None
 
-    current_device_name: Optional[str] = cli_device_name.strip() if cli_device_name else None
+    current_device_name: Optional[str] = None
+    if cli_device_name:
+        try:
+            current_device_name = validate_workstation_name(cli_device_name)
+        except ValueError as exc:
+            print_func(f"[!] Warning: Invalid CLI --device-name: {exc}")
+            current_device_name = None
 
     # If both CLI arguments provided and non-interactive mode requested:
     is_fully_cli = (cli_server_url is not None) and (cli_device_name is not None)
@@ -284,10 +325,13 @@ def run_interactive_setup(
                     print_func("\nSetup cancelled. Exiting.")
                     sys.exit(0)
 
-                current_device_name = raw_name if raw_name else default_device_name
-                if current_device_name:
+                chosen_name = raw_name if raw_name else default_device_name
+                try:
+                    current_device_name = validate_workstation_name(chosen_name)
+                    prompt_for_name = False
                     break
-                print_func("[!] Workstation name cannot be empty.")
+                except ValueError as exc:
+                    print_func(f"[!] Invalid workstation name: {exc}")
 
         assert current_server_url is not None
         assert current_device_name is not None
@@ -305,11 +349,12 @@ def run_interactive_setup(
                 server_status = f"Healthy ({server_name} v{server_ver})"
 
             print_func("\n" + "=" * 80)
-            print_func(" [✓] Central Server Connected Successfully!")
-            print_func(f"     Server URL:        {current_server_url}")
-            print_func(f"     Connection Status: {server_status}")
-            print_func(f"     Workstation Name:  {current_device_name}")
+            print_func(" [OK] Central Server Connected Successfully!")
+            print_func(f"      Server URL:        {current_server_url}")
+            print_func(f"      Connection Status: {server_status}")
+            print_func(f"      Workstation Name:  {current_device_name}")
             print_func("=" * 80)
+            print_func("Note: Server reachability verified via GET /api/v1/health.")
             print_func("Initializing local AI vision engines, camera, and awareness overlay...\n")
 
             # Persist settings locally

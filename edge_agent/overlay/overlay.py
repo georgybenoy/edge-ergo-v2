@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import sys
+import time
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from edge_agent.feedback.alert_engine import AlertEngine, AlertPriority, NotificationItem
+from edge_agent.assessment_state import AssessmentStateProvider, CurrentAssessmentState
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +72,12 @@ class WorkerOverlayWidget(QWidget):
     def __init__(
         self,
         alert_engine: Optional[AlertEngine] = None,
+        state_provider: Optional[AssessmentStateProvider] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.alert_engine = alert_engine
+        self.state_provider = state_provider
 
         # Window configuration: frameless, always-on-top, tool window, no focus steal
         self.setWindowFlags(
@@ -137,11 +141,11 @@ class WorkerOverlayWidget(QWidget):
         self.lbl_monitoring = QLabel("EdgeErgo ● Monitoring", self.status_bar)
         self.lbl_monitoring.setStyleSheet(f"color: {COLOR_LOW}; font-weight: bold; font-size: 11px;")
 
-        # Risk badge
-        self.lbl_risk = QLabel("LOW RISK", self.status_bar)
+        # Risk badge (initialized honestly as awaiting assessment)
+        self.lbl_risk = QLabel("AWAITING ASSESSMENT", self.status_bar)
         self.lbl_risk.setStyleSheet(f"""
-            background-color: rgba(16, 185, 129, 0.15);
-            color: {COLOR_LOW};
+            background-color: rgba(100, 116, 139, 0.18);
+            color: {TEXT_MUTED};
             padding: 2px 6px;
             border-radius: 4px;
             font-weight: 600;
@@ -153,7 +157,7 @@ class WorkerOverlayWidget(QWidget):
         self.lbl_timing.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
 
         # Live Scores (RULA / REBA)
-        self.lbl_scores = QLabel("RULA: -- | REBA: --", self.status_bar)
+        self.lbl_scores = QLabel("Waiting for pose...", self.status_bar)
         self.lbl_scores.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-weight: 500;")
 
         # Sync indicator
@@ -268,7 +272,7 @@ class WorkerOverlayWidget(QWidget):
     def _setup_timers(self) -> None:
         """Setup periodic poll timer for alert engine and auto-dismiss."""
         self.poll_timer = QTimer(self)
-        self.poll_timer.setInterval(500)  # check every 500ms
+        self.poll_timer.setInterval(300)  # check every 300ms for responsive HUD updates
         self.poll_timer.timeout.connect(self._on_poll_tick)
         self.poll_timer.start()
 
@@ -278,13 +282,16 @@ class WorkerOverlayWidget(QWidget):
         self,
         *,
         is_monitoring: bool = True,
-        risk_level: str = "LOW",
-        rula: float = 1.0,
-        reba: float = 1.0,
+        risk_level: Optional[str] = "LOW",
+        rula: Optional[float] = None,
+        reba: Optional[float] = None,
         dominant_posture: str = "NEUTRAL",
         last_time_str: str = "--",
-        next_time_str: str = "--",
+        next_time_str: Optional[str] = None,
         sync_status: str = "Synced ●",
+        assessment_valid: bool = True,
+        status: Optional[str] = None,
+        is_stale: bool = False,
     ) -> None:
         """Thread-safe status update via Qt Signal."""
         self.status_signal.emit({
@@ -296,16 +303,22 @@ class WorkerOverlayWidget(QWidget):
             "last_time_str": last_time_str,
             "next_time_str": next_time_str,
             "sync_status": sync_status,
+            "assessment_valid": assessment_valid,
+            "status": status,
+            "is_stale": is_stale,
         })
 
     def _apply_status_update(self, data: dict) -> None:
         """Executed on Qt main thread via Signal slot."""
         is_monitoring = data.get("is_monitoring", True)
-        risk_level = data.get("risk_level", "LOW")
-        rula = float(data.get("rula", 1.0))
-        reba = float(data.get("reba", 1.0))
+        assessment_valid = data.get("assessment_valid", True)
+        risk_level = data.get("risk_level")
+        rula = data.get("rula")
+        reba = data.get("reba")
         last_time_str = data.get("last_time_str", "--")
         sync_status = data.get("sync_status", "Synced ●")
+        status_text = data.get("status")
+        is_stale = data.get("is_stale", False)
 
         if is_monitoring:
             self.lbl_monitoring.setText("EdgeErgo ● Monitoring")
@@ -315,18 +328,38 @@ class WorkerOverlayWidget(QWidget):
             self.lbl_monitoring.setStyleSheet(f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;")
 
         # Update risk badge
-        risk_clean = str(risk_level).upper()
-        if risk_clean in ("VERY_HIGH", "HIGH"):
-            color = COLOR_HIGH
-            bg = "rgba(239, 68, 68, 0.18)"
-        elif risk_clean == "MODERATE":
+        if assessment_valid and risk_level:
+            risk_clean = str(risk_level).upper()
+            if is_stale:
+                risk_display = f"{risk_clean} (STALE)"
+                color = COLOR_MODERATE
+                bg = "rgba(245, 158, 11, 0.18)"
+            elif risk_clean in ("VERY_HIGH", "CRITICAL"):
+                risk_display = "CRITICAL" if risk_clean == "CRITICAL" else "VERY HIGH"
+                color = COLOR_HIGH
+                bg = "rgba(239, 68, 68, 0.18)"
+            elif risk_clean == "HIGH":
+                risk_display = "HIGH"
+                color = COLOR_HIGH
+                bg = "rgba(239, 68, 68, 0.18)"
+            elif risk_clean == "MODERATE":
+                risk_display = "MODERATE"
+                color = COLOR_MODERATE
+                bg = "rgba(245, 158, 11, 0.18)"
+            else:
+                risk_display = "LOW"
+                color = COLOR_LOW
+                bg = "rgba(16, 185, 129, 0.18)"
+        elif is_stale:
+            risk_display = "ASSESSMENT DELAYED"
             color = COLOR_MODERATE
             bg = "rgba(245, 158, 11, 0.18)"
         else:
-            color = COLOR_LOW
-            bg = "rgba(16, 185, 129, 0.18)"
+            risk_display = "AWAITING ASSESSMENT"
+            color = TEXT_MUTED
+            bg = "rgba(100, 116, 139, 0.18)"
 
-        self.lbl_risk.setText(risk_clean)
+        self.lbl_risk.setText(risk_display)
         self.lbl_risk.setStyleSheet(f"""
             background-color: {bg};
             color: {color};
@@ -336,15 +369,28 @@ class WorkerOverlayWidget(QWidget):
             font-size: 10px;
         """)
 
-        # Live terminal parity scores
-        self.lbl_scores.setText(f"RULA: {rula:.1f} | REBA: {reba:.1f}")
+        # Live scores: RULA [1-7] and REBA [1-15]
+        if assessment_valid and rula is not None and reba is not None:
+            rula_val = int(round(float(rula)))
+            reba_val = int(round(float(reba)))
+            stale_tag = " [Stale]" if is_stale else ""
+            self.lbl_scores.setText(f"RULA: {rula_val}/7 | REBA: {reba_val}/15{stale_tag}")
+            self.lbl_scores.setStyleSheet(f"color: {TEXT_PRIMARY if not is_stale else TEXT_SECONDARY}; font-size: 10px; font-weight: 500;")
+        else:
+            msg = status_text or "Waiting for pose..."
+            self.lbl_scores.setText(msg)
+            self.lbl_scores.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 500;")
 
         # Update timing and sync status
-        next_time_str = data.get("next_time_str", "--")
-        self.lbl_timing.setText(f"Last: {last_time_str} | Next: {next_time_str}")
+        next_time_str = data.get("next_time_str")
+        timing_suffix = f" | Next: {next_time_str}" if next_time_str else ""
+        stale_suffix = " (Delayed)" if is_stale and last_time_str != "--" else ""
+        self.lbl_timing.setText(f"Last: {last_time_str}{stale_suffix}{timing_suffix}")
         self.lbl_sync.setText(sync_status)
         if "Syncing" in sync_status:
             self.lbl_sync.setStyleSheet(f"color: {COLOR_MODERATE}; font-size: 10px;")
+        elif "Offline" in sync_status:
+            self.lbl_sync.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         else:
             self.lbl_sync.setStyleSheet(f"color: {COLOR_BLUE}; font-size: 10px;")
 
@@ -423,18 +469,44 @@ class WorkerOverlayWidget(QWidget):
     # ── Internal Polling Tick ─────────────────────────────────────────
 
     def _on_poll_tick(self) -> None:
-        """Poll the alert engine for auto-dismiss and newly queued alerts."""
-        if self.alert_engine is None:
-            return
+        """Poll the assessment state provider and alert engine periodically on GUI thread."""
+        now = time.time()
 
-        import time
-        now = time.monotonic()
-        active = self.alert_engine.poll(now)
+        # 1. Update from state provider if attached
+        if self.state_provider is not None:
+            state = self.state_provider.get_state()
+            is_stale = self.state_provider.is_stale(now)
 
-        if active is not None and active != self._current_notification:
-            self.show_notification(active)
-        elif active is None and self.card_frame.isVisible():
-            self.hide_notification()
+            # If no live assessment yet, try one-time DB fallback for this device
+            if not state.assessment_valid and state.last_valid_timestamp == 0:
+                if self.state_provider.fallback_to_local_db(state.device_id):
+                    state = self.state_provider.get_state()
+
+            last_time_str = "--"
+            if state.last_valid_timestamp > 0:
+                last_time_str = time.strftime("%H:%M:%S", time.localtime(state.last_valid_timestamp))
+
+            data = {
+                "is_monitoring": state.is_monitoring,
+                "assessment_valid": state.assessment_valid,
+                "risk_level": state.risk_level,
+                "rula": state.rula_score,
+                "reba": state.reba_score,
+                "last_time_str": last_time_str,
+                "sync_status": state.sync_status,
+                "status": state.status,
+                "is_stale": is_stale,
+            }
+            self._apply_status_update(data)
+
+        # 2. Poll alert engine for auto-dismiss and newly queued alerts
+        if self.alert_engine is not None:
+            now_mono = time.monotonic()
+            active = self.alert_engine.poll(now_mono)
+            if active is not None and active != self._current_notification:
+                self.show_notification(active)
+            elif active is None and self.card_frame.isVisible():
+                self.hide_notification()
 
     # ── Drag Window Support ───────────────────────────────────────────
 

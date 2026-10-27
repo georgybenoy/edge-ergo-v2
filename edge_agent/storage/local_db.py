@@ -431,6 +431,29 @@ class LocalDatabase:
                     (event_id, session_id, alert_ts, "ALERT", event_val),
                 )
 
+            # If no inline alert was triggered, but session exhibited elevated ergonomic risk,
+            # persist an alert event directly connecting risk to the alerts system
+            if not alerts and risk_level in ("HIGH", "VERY_HIGH"):
+                event_id = str(uuid.uuid4())
+                posture_label = dominant_posture.replace("_", " ").title() if dominant_posture != "NEUTRAL" else "High Risk Posture"
+                event_val = json.dumps(
+                    {
+                        "condition": dominant_posture if dominant_posture != "NEUTRAL" else "POSTURE",
+                        "risk_level": risk_level,
+                        "rula_score": round(avg_rula),
+                        "reba_score": round(avg_reba),
+                        "duration_sec": duration,
+                        "message": f"Sustained {risk_level.lower().replace('_', ' ')} posture detected ({posture_label}, RULA {round(avg_rula)}).",
+                    }
+                )
+                conn.execute(
+                    """
+                    INSERT INTO events (event_id, session_id, timestamp, event_type, event_value)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (event_id, session_id, end_time_iso, "ALERT", event_val),
+                )
+
             # Insert optional custom events
             if session_events:
                 for evt in session_events:

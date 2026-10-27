@@ -40,6 +40,7 @@ from edge_agent.health.heartbeat import HeartbeatClient
 from edge_agent.storage.local_db import LocalDatabase
 from edge_agent.sync.server_sync import ServerSync, SyncWorker
 from edge_agent.temporal.analyzer import TemporalAnalyzer
+from edge_agent.assessment_state import AssessmentStateProvider
 from edge_agent.vision.face_engine import FaceEngine
 from edge_agent.vision.pose_engine import PoseEngine
 
@@ -96,45 +97,57 @@ class EdgeAgentController:
         self.sync_worker: Optional[SyncWorker] = None
         self.heartbeat_client: Optional[HeartbeatClient] = None
 
-        # 5. UI Overlay reference
+        # 5. Shared current assessment state provider (PRD HUD shared state)
+        self.state_provider = AssessmentStateProvider(
+            local_db=self.db,
+            freshness_threshold_sec=5.0,
+        )
+        self.state_provider.set_device_info(
+            device_id=self.config_manager.config.device_id or "NODE-LOCAL",
+            device_name=self.config_manager.config.device_name or "Workstation",
+        )
+
+        # 6. UI Overlay reference
         self.overlay_widget = None
 
     def setup_and_register(self) -> str:
-        """Verify camera and register with Central Server if not already registered."""
+        """Verify camera and register with Central Server."""
         # Check camera
         cams = list_available_cameras(max_index=2)
         has_cam = len(cams) > 0 or self.no_camera
         logger.info("Detected local camera devices: %s", cams)
 
-        # Check existing registration
-        device_id = self.config_manager.config.device_id
-        if device_id:
-            logger.info("Node already registered as: %s", device_id)
+        d_name = self.config_manager.config.device_name or "Workstation"
+        server = self.config_manager.config.server_url
+        cam_idx = cams[0] if cams else 0
+
+        # Register workstation node with Central Server to synchronize name and retrieve assigned ID
+        logger.info("Registering workstation '%s' with Central Server: %s", d_name, server)
+        success, dev_id_or_err = self.server_sync.register_node(
+            device_name=d_name,
+            camera_index=cam_idx,
+        )
+        if success:
+            device_id = dev_id_or_err
+            logger.info("Node registration verified. Assigned Node ID: %s", device_id)
         else:
-            # First-time registration
-            server = self.config_manager.config.server_url
-            d_name = self.config_manager.config.device_name or "Workstation"
-            logger.info("Performing first-time node registration with Central Server: %s", server)
-            success, dev_id_or_err = self.server_sync.register_node(
+            device_id = self.config_manager.config.device_id or "NODE-LOCAL"
+            self.config_manager.update({"device_id": device_id}, save_to_disk=True)
+            self.db.register_device(
+                device_id=device_id,
                 device_name=d_name,
-                camera_index=cams[0] if cams else 0,
+                software_version=self.config_manager.config.software_version,
             )
-            if success:
-                device_id = dev_id_or_err
-                logger.info("Registration successful! Assigned Node ID: %s", device_id)
-            else:
-                device_id = "NODE-LOCAL"
-                self.config_manager.update({"device_id": device_id}, save_to_disk=True)
-                self.db.register_device(
-                    device_id=device_id,
-                    device_name=d_name,
-                    software_version=self.config_manager.config.software_version,
-                )
-                logger.warning(
-                    "Could not reach Central Server: %s. Continuing in offline mode with ID: %s",
-                    dev_id_or_err,
-                    device_id,
-                )
+            logger.warning(
+                "Could not register with Central Server: %s. Continuing with ID: %s",
+                dev_id_or_err,
+                device_id,
+            )
+
+        self.state_provider.set_device_info(
+            device_id=device_id,
+            device_name=d_name,
+        )
 
         # Initialize network workers
         self.heartbeat_client = HeartbeatClient(
@@ -173,12 +186,19 @@ class EdgeAgentController:
 
         cam = None
         if not self.no_camera:
+            cam_idx = getattr(self.config_manager.config, "camera_index", 0)
             try:
-                cam = Camera(camera_index=0, frame_width=640, frame_height=480)
+                self.state_provider.update_status("Initializing camera...")
+                cam = Camera(camera_index=cam_idx, frame_width=640, frame_height=480)
                 cam.open()
+                logger.info("Successfully opened physical camera at index %d", cam_idx)
+                self.state_provider.update_status("Waiting for pose...")
             except Exception as e:
-                logger.warning("Failed to open physical camera: %s. Falling back to synthetic frames.", e)
+                logger.warning("Failed to open physical camera at index %s: %s. Falling back to synthetic frames.", cam_idx, e)
+                self.state_provider.update_status("Waiting for pose (Synthetic fallback)...", last_error=str(e))
                 cam = None
+        else:
+            self.state_provider.update_status("Waiting for pose (Synthetic test mode)...")
 
         frame_interval = 1.0 / self.target_fps
         frame_idx = 0
@@ -211,65 +231,129 @@ class EdgeAgentController:
                     rgb = np.zeros((480, 640, 3), dtype=np.uint8)
 
                 if rgb is not None:
+                    try:
+                        cur_time = time.time()
+                        sync_stat = "Synced ●" if not self.server_sync.is_busy() else "Syncing..."
+                        last_str = time.strftime("%H:%M:%S", time.localtime(cur_time))
 
-                    cur_time = time.time()
+                        # 2. Vision Inference
+                        pose_res = self.pose_engine.process_frame(rgb)
+                        face_res = self.face_engine.process_frame(rgb)
 
-                    # 2. Vision Inference
-                    pose_res = self.pose_engine.process_frame(rgb)
-                    face_res = self.face_engine.process_frame(rgb)
-
-                    # 3. Ergonomics & Posture
-                    posture_params = self.angle_calc.calculate(pose_res.landmarks, timestamp=cur_time)
-                    assessment = assess(posture_params)
-                    rula = float(assessment.rula_score)
-                    reba = float(assessment.reba_score)
-                    risk_cat = assessment.risk_level.value
-
-                    # 4. Facial Expression
-                    expr_res = self.expr_classifier.classify(face_res, timestamp=cur_time)
-                    expr_cat = expr_res.category.value if expr_res else "Neutral"
-
-                    # 5. Temporal Posture Persistence & Alert Detection
-                    alert_evt = self.temporal_analyzer.process_frame(
-                        assessment=assessment,
-                        expression=expr_res,
-                        timestamp=cur_time,
-                    )
-
-                    # 6. Trigger Alerts
-                    if alert_evt is not None:
-                        rec = get_posture_recommendation(alert_evt.condition)
-                        msg = rec.action_tip if rec is not None else alert_evt.message
-                        self.alert_engine.enqueue(
-                            message=msg,
-                            priority=AlertPriority.WARNING if "HIGH" in alert_evt.risk_level else AlertPriority.ATTENTION,
-                            duration_seconds=6.0,
-                        )
-
-                    # 7. Update UI Overlay Status
-                    if self.overlay_widget is not None:
-                        try:
-                            last_str = time.strftime("%H:%M:%S", time.localtime(cur_time))
-                            self.overlay_widget.update_status(
-                                is_monitoring=True,
-                                risk_level=risk_cat,
-                                rula=rula,
-                                reba=reba,
-                                dominant_posture=getattr(assessment, "dominant_posture", "NEUTRAL"),
-                                last_time_str=last_str,
-                                sync_status="Synced ●" if not self.server_sync.is_busy() else "Syncing...",
+                        # Check if body pose was detected
+                        if not pose_res.is_detected or not pose_res.landmarks:
+                            self.state_provider.update_no_pose(
+                                status="No person detected",
+                                timestamp=cur_time,
+                                sync_status=sync_stat,
                             )
-                        except Exception as e:
-                            logger.debug("Overlay update issue: %s", e)
+                            if self.overlay_widget is not None:
+                                try:
+                                    self.overlay_widget.update_status(
+                                        is_monitoring=True,
+                                        risk_level=None,
+                                        assessment_valid=False,
+                                        status="No person detected",
+                                        sync_status=sync_stat,
+                                    )
+                                except Exception as e:
+                                    logger.debug("Overlay update issue: %s", e)
+                            elapsed = time.time() - loop_start
+                            time.sleep(max(0.001, frame_interval - elapsed))
+                            continue
 
-                    frame_idx += 1
+                        # 3. Ergonomics & Posture
+                        posture_params = self.angle_calc.calculate(pose_res.landmarks, timestamp=cur_time)
+                        if posture_params.available_angle_count == 0:
+                            self.state_provider.update_no_pose(
+                                status="Waiting for pose",
+                                timestamp=cur_time,
+                                sync_status=sync_stat,
+                            )
+                            if self.overlay_widget is not None:
+                                try:
+                                    self.overlay_widget.update_status(
+                                        is_monitoring=True,
+                                        risk_level=None,
+                                        assessment_valid=False,
+                                        status="Waiting for pose",
+                                        sync_status=sync_stat,
+                                    )
+                                except Exception as e:
+                                    logger.debug("Overlay update issue: %s", e)
+                            elapsed = time.time() - loop_start
+                            time.sleep(max(0.001, frame_interval - elapsed))
+                            continue
 
-                    # Log periodically
-                    if frame_idx % 75 == 0:
-                        logger.info(
-                            "Edge Node Monitoring: RULA=%.1f (%s), REBA=%.1f, Expression=%s, Frames=%d",
-                            rula, risk_cat, reba, expr_cat, frame_idx,
+                        assessment = assess(posture_params)
+                        rula = int(assessment.rula_score)
+                        reba = int(assessment.reba_score)
+                        risk_cat = assessment.risk_level.value
+                        dominant = assessment.dominant_posture
+
+                        # 4. Facial Expression
+                        expr_res = self.expr_classifier.classify(face_res, timestamp=cur_time)
+                        expr_cat = expr_res.category.value if expr_res else "Neutral"
+
+                        # 5. Temporal Posture Persistence & Alert Detection
+                        alert_evt = self.temporal_analyzer.process_frame(
+                            assessment=assessment,
+                            expression=expr_res,
+                            timestamp=cur_time,
                         )
+
+                        # 6. Trigger Alerts
+                        if alert_evt is not None:
+                            rec = get_posture_recommendation(alert_evt.condition)
+                            msg = rec.action_tip if rec is not None else alert_evt.message
+                            self.alert_engine.enqueue(
+                                message=msg,
+                                priority=AlertPriority.WARNING if "HIGH" in alert_evt.risk_level else AlertPriority.ATTENTION,
+                                duration_seconds=6.0,
+                            )
+
+                        # 7. Update UI Overlay Status & Assessment State Provider
+                        self.state_provider.update_assessment(
+                            rula_score=rula,
+                            reba_score=reba,
+                            risk_level=risk_cat,
+                            rula_action_level=assessment.rula_action_level,
+                            reba_action_level=assessment.reba_action_level,
+                            dominant_posture=dominant,
+                            joint_angles=posture_params.to_dict(),
+                            timestamp=cur_time,
+                            status="Monitoring",
+                            sync_status=sync_stat,
+                        )
+
+                        if self.overlay_widget is not None:
+                            try:
+                                self.overlay_widget.update_status(
+                                    is_monitoring=True,
+                                    risk_level=risk_cat,
+                                    rula=float(rula),
+                                    reba=float(reba),
+                                    dominant_posture=dominant,
+                                    last_time_str=last_str,
+                                    sync_status=sync_stat,
+                                    assessment_valid=True,
+                                    status="Monitoring",
+                                )
+                            except Exception as e:
+                                logger.debug("Overlay update issue: %s", e)
+
+                        frame_idx += 1
+
+                        # Log periodically
+                        if frame_idx % 75 == 0:
+                            logger.info(
+                                "Edge Node Monitoring: RULA=%d (%s), REBA=%d, Posture=%s, Expression=%s, Frames=%d",
+                                rula, risk_cat, reba, dominant, expr_cat, frame_idx,
+                            )
+
+                    except Exception as frame_exc:
+                        logger.warning("Error during frame analysis: %s", frame_exc)
+                        self.state_provider.update_status("Assessment unavailable", last_error=str(frame_exc))
 
                     # Window rollover for telemetry persistence
                     if (cur_time - session_start_time) >= telemetry_interval_sec:
@@ -320,6 +404,18 @@ class EdgeAgentController:
 
 def main() -> None:
     """EdgeErgo Agent CLI & Desktop Application Entry Point."""
+    # Ensure Windows console uses UTF-8 encoding safely without UnicodeEncodeErrors
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description="EdgeErgo — Privacy-Preserving Edge AI Ergonomic & Expression Monitoring Agent"
     )
@@ -381,7 +477,10 @@ def main() -> None:
             from edge_agent.overlay.overlay import WorkerOverlayWidget
 
             app = QApplication.instance() or QApplication(sys.argv)
-            overlay = WorkerOverlayWidget(alert_engine=controller.alert_engine)
+            overlay = WorkerOverlayWidget(
+                alert_engine=controller.alert_engine,
+                state_provider=controller.state_provider,
+            )
             controller.overlay_widget = overlay
 
             # Position in top-right screen quadrant

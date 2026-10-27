@@ -31,7 +31,9 @@ from edge_agent.setup.interactive import (
     get_default_workstation_name,
     normalize_server_url,
     run_interactive_setup,
+    validate_workstation_name,
 )
+from edge_agent.main import EdgeAgentController
 from central_server.main import create_app
 from central_server.database.database import CentralDatabase
 
@@ -72,8 +74,48 @@ class TestURLNormalization:
         with pytest.raises(ValueError, match="Only http:// and https://"):
             normalize_server_url("ftp://192.168.1.100")
 
+    def test_whitespace_in_url_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="cannot contain whitespace"):
+            normalize_server_url("192.168.1. 100")
 
-# ── 2. Server Health Check Connectivity Tests ─────────────────────────────────
+    def test_invalid_port_range_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535"):
+            normalize_server_url("192.168.1.100:99999")
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535"):
+            normalize_server_url("192.168.1.100:0")
+
+    def test_non_numeric_port_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535"):
+            normalize_server_url("192.168.1.100:port")
+
+
+# ── 2. Workstation Name Validation Tests ──────────────────────────────────────
+
+class TestWorkstationNameValidation:
+    """Tests workstation name rules and sanitization."""
+
+    def test_valid_workstation_name(self) -> None:
+        assert validate_workstation_name("HR-Desk-01") == "HR-Desk-01"
+        assert validate_workstation_name("  Finance-PC-3  ") == "Finance-PC-3"
+
+    def test_empty_workstation_name_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="cannot be empty"):
+            validate_workstation_name("")
+        with pytest.raises(ValueError, match="cannot be empty"):
+            validate_workstation_name("   ")
+
+    def test_too_long_workstation_name_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="must not exceed 100 characters"):
+            validate_workstation_name("A" * 101)
+
+    def test_control_characters_in_name_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="control characters"):
+            validate_workstation_name("Desk\n01")
+        with pytest.raises(ValueError, match="control characters"):
+            validate_workstation_name("Desk\x0001")
+
+
+# ── 3. Server Health Check Connectivity Tests ─────────────────────────────────
 
 class TestServerHealthCheck:
     """Tests GET /api/v1/health connectivity checks under various network states."""
@@ -105,6 +147,14 @@ class TestServerHealthCheck:
         assert is_healthy is False
         assert "timed out" in str(error_msg).lower()
 
+    def test_read_timeout_handled(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ReadTimeout("Read timed out")
+
+        is_healthy, error_msg = check_server_health("http://192.168.1.200:8000", client=mock_client)
+        assert is_healthy is False
+        assert "timed out" in str(error_msg).lower()
+
     def test_server_http_error_handled(self) -> None:
         mock_client = MagicMock()
         mock_resp = MagicMock()
@@ -117,7 +167,7 @@ class TestServerHealthCheck:
         assert "503" in str(error_msg)
 
 
-# ── 3. Interactive Setup Workflow Tests ───────────────────────────────────────
+# ── 4. Interactive Setup Workflow Tests ───────────────────────────────────────
 
 class TestInteractiveSetupWorkflow:
     """Tests interactive prompt inputs, saved defaults, retries, and exit options."""
@@ -226,6 +276,36 @@ class TestInteractiveSetupWorkflow:
         assert server_url == "http://192.168.1.50:8000"
         assert device_name == "Desk-Test"
 
+    def test_change_server_url_on_failure_then_succeed(self, tmp_path: Path) -> None:
+        """Verifies option [2] allows entering a different server URL after failure."""
+        cfg_file = tmp_path / "edge_config.json"
+        config_manager = ConfigManager(cfg_file)
+
+        # 1: User enters bad IP and desk name
+        # 2: First health check fails -> user chooses "2" (Enter different URL)
+        # 3: User enters good IP
+        # 4: Second health check succeeds
+        inputs = iter(["192.168.1.99", "Sales-Desk-05", "2", "192.168.1.100"])
+        outputs: list[str] = []
+        call_urls: list[str] = []
+
+        def mock_health(url: str, timeout: float) -> Tuple[bool, Any]:
+            call_urls.append(url)
+            if "192.168.1.99" in url:
+                return False, "Host unreachable"
+            return True, {"status": "healthy", "server": "EdgeErgo Central Server"}
+
+        server_url, device_name = run_interactive_setup(
+            config_manager=config_manager,
+            input_func=lambda _: next(inputs),
+            print_func=outputs.append,
+            health_checker=mock_health,
+        )
+
+        assert call_urls == ["http://192.168.1.99:8000", "http://192.168.1.100:8000"]
+        assert server_url == "http://192.168.1.100:8000"
+        assert device_name == "Sales-Desk-05"
+
     def test_user_chooses_exit_on_failure(self, tmp_path: Path) -> None:
         cfg_file = tmp_path / "edge_config.json"
         config_manager = ConfigManager(cfg_file)
@@ -244,6 +324,61 @@ class TestInteractiveSetupWorkflow:
                 health_checker=mock_health,
             )
         assert exc_info.value.code == 0
+
+    def test_keyboard_interrupt_exits_gracefully(self, tmp_path: Path) -> None:
+        cfg_file = tmp_path / "edge_config.json"
+        config_manager = ConfigManager(cfg_file)
+
+        def mock_input(_: str) -> str:
+            raise KeyboardInterrupt()
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_setup(
+                config_manager=config_manager,
+                input_func=mock_input,
+                health_checker=lambda u, t: (True, {}),
+            )
+        assert exc_info.value.code == 0
+
+    def test_cli_server_provided_prompts_only_for_name(self, tmp_path: Path) -> None:
+        cfg_file = tmp_path / "edge_config.json"
+        config_manager = ConfigManager(cfg_file)
+
+        # CLI provides server; prompt should only ask for workstation name
+        inputs = iter(["Warehouse-Desk-01"])
+
+        def mock_health(url: str, timeout: float) -> Tuple[bool, Any]:
+            return True, {"status": "healthy"}
+
+        server_url, device_name = run_interactive_setup(
+            config_manager=config_manager,
+            cli_server_url="192.168.1.22",
+            input_func=lambda _: next(inputs),
+            health_checker=mock_health,
+        )
+
+        assert server_url == "http://192.168.1.22:8000"
+        assert device_name == "Warehouse-Desk-01"
+
+    def test_cli_device_name_provided_prompts_only_for_server(self, tmp_path: Path) -> None:
+        cfg_file = tmp_path / "edge_config.json"
+        config_manager = ConfigManager(cfg_file)
+
+        # CLI provides device name; prompt should only ask for server URL
+        inputs = iter(["192.168.1.33"])
+
+        def mock_health(url: str, timeout: float) -> Tuple[bool, Any]:
+            return True, {"status": "healthy"}
+
+        server_url, device_name = run_interactive_setup(
+            config_manager=config_manager,
+            cli_device_name="Warehouse-Desk-02",
+            input_func=lambda _: next(inputs),
+            health_checker=mock_health,
+        )
+
+        assert server_url == "http://192.168.1.33:8000"
+        assert device_name == "Warehouse-Desk-02"
 
     def test_monitoring_does_not_start_when_connection_fails(self, tmp_path: Path) -> None:
         """Requirement 8: Verify that EdgeAgentController is never initialized if health check fails."""
@@ -265,7 +400,7 @@ class TestInteractiveSetupWorkflow:
             mock_controller_cls.assert_not_called()
 
 
-# ── 4. Multi-Workstation Architecture & Registration Tests ────────────────────
+# ── 5. Multi-Workstation Architecture & Registration Tests ────────────────────
 
 class TestMultiWorkstationRegistration:
     """Verifies that multiple workstations can independently register unique names."""
@@ -282,3 +417,100 @@ class TestMultiWorkstationRegistration:
         assert w3["device_id"] == "NODE-003"
         assert w1["device_name"] != w2["device_name"]
         db.close()
+
+    def test_multiple_workstations_controller_setup_and_register(self, tmp_path: Path) -> None:
+        """Verifies multi-workstation controller initialization and registration."""
+        db = CentralDatabase(db_path=tmp_path / "controller_multi.db", auto_init=True)
+        app = create_app(database=db)
+
+        with TestClient(app) as client:
+            # Workstation 1 setup
+            cfg1_path = tmp_path / "node1_config.json"
+            ctrl1 = EdgeAgentController(
+                config_path=str(cfg1_path),
+                server_url="http://testserver",
+                device_name="Executive-Desk-01",
+                no_camera=True,
+                headless=True,
+            )
+            # Patch ServerSync client to talk directly to TestClient
+            with patch("httpx.Client") as mock_http:
+                mock_client = MagicMock()
+                mock_resp = MagicMock()
+                mock_resp.status_code = 201
+                mock_resp.json.return_value = {"device_id": "NODE-001"}
+                mock_client.post.return_value = mock_resp
+                mock_http.return_value.__enter__.return_value = mock_client
+
+                id1 = ctrl1.setup_and_register()
+
+            # Workstation 2 setup
+            cfg2_path = tmp_path / "node2_config.json"
+            ctrl2 = EdgeAgentController(
+                config_path=str(cfg2_path),
+                server_url="http://testserver",
+                device_name="Executive-Desk-02",
+                no_camera=True,
+                headless=True,
+            )
+            with patch("httpx.Client") as mock_http:
+                mock_client = MagicMock()
+                mock_resp = MagicMock()
+                mock_resp.status_code = 201
+                mock_resp.json.return_value = {"device_id": "NODE-002"}
+                mock_client.post.return_value = mock_resp
+                mock_http.return_value.__enter__.return_value = mock_client
+
+                id2 = ctrl2.setup_and_register()
+
+            assert id1 == "NODE-001"
+            assert id2 == "NODE-002"
+            assert id1 != id2
+            ctrl1.db.close()
+            ctrl2.db.close()
+        db.close()
+
+
+# ── 6. Existing Agent Functionality Preservation Tests ────────────────────────
+
+class TestExistingAgentFunctionalityPreserved:
+    """Verifies that interactive setup preserves all existing agent configuration and features."""
+
+    def test_existing_config_options_preserved_on_save(self, tmp_path: Path) -> None:
+        cfg_file = tmp_path / "edge_config.json"
+        # Seed custom configuration
+        with open(cfg_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "capture_fps": 20,
+                "frame_width": 1280,
+                "frame_height": 720,
+                "telemetry_window_sec": 120,
+                "rula_alert_threshold": 6,
+                "break_interval_min": 50,
+                "server_url": "http://192.168.1.10:8000",
+                "device_name": "Old-Desk",
+            }, f)
+
+        config_manager = ConfigManager(cfg_file)
+        inputs = iter(["192.168.1.55", "New-Lab-Desk"])
+
+        def mock_health(url: str, timeout: float) -> Tuple[bool, Any]:
+            return True, {"status": "healthy"}
+
+        server_url, device_name = run_interactive_setup(
+            config_manager=config_manager,
+            input_func=lambda _: next(inputs),
+            health_checker=mock_health,
+        )
+
+        assert server_url == "http://192.168.1.55:8000"
+        assert device_name == "New-Lab-Desk"
+
+        # Verify other settings were preserved
+        cfg = config_manager.config
+        assert cfg.capture_fps == 20
+        assert cfg.frame_width == 1280
+        assert cfg.frame_height == 720
+        assert cfg.telemetry_window_sec == 120
+        assert cfg.rula_alert_threshold == 6
+        assert cfg.break_interval_min == 50

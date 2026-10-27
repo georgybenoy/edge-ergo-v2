@@ -906,7 +906,7 @@ def _assert_no_base64_images(text: str, payload_idx: int) -> None:
 # Allowed top-level and nested keys in telemetry payloads
 _ALLOWED_TELEMETRY_KEYS = {
     "window_id", "device_id", "session_id", "window_start", "window_end",
-    "ergonomics", "facial_expression", "breaks",
+    "ergonomics", "facial_expression", "breaks", "events",
     # Nested under ergonomics
     "average_rula", "maximum_rula", "average_reba", "maximum_reba",
     "high_risk_percentage", "dominant_posture",
@@ -915,6 +915,8 @@ _ALLOWED_TELEMETRY_KEYS = {
     "negative_percentage", "reduced_expression_percentage",
     # Nested under breaks
     "breaks_recommended", "breaks_acknowledged",
+    # Nested under events
+    "event_id", "timestamp", "event_type", "event_value",
 }
 
 

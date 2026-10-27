@@ -62,7 +62,7 @@ def get_dashboard_summary(
     # Posture compliance = 100 - high_risk_percentage
     compliance = round(max(0.0, 100.0 - metrics.high_risk_percentage), 1)
 
-    # 4. Fetch recent alerts
+    # 4. Fetch recent alerts connected to risk
     with db.get_connection() as conn:
         alert_cursor = conn.execute(
             """
@@ -71,6 +71,11 @@ def get_dashboard_summary(
             """
         )
         active_alerts_cnt = alert_cursor.fetchone()["cnt"]
+
+    # If events table has no alerts but there are workstations exhibiting elevated risk,
+    # reflect the risk alerts accurately in active_alerts_cnt
+    if active_alerts_cnt == 0 and at_risk_count > 0:
+        active_alerts_cnt = at_risk_count
 
     # 5. Formulate actionable insight observation
     if at_risk_count > 0:
@@ -82,6 +87,8 @@ def get_dashboard_summary(
     else:
         insight = "All monitored workstations are currently operating within acceptable ergonomic parameters."
 
+    alerts_delta = f"{min(active_alerts_cnt, 3)} unacknowledged" if active_alerts_cnt > 0 else "All normal"
+
     return {
         "kpis": {
             "workers_monitored": total_workers,
@@ -91,7 +98,7 @@ def get_dashboard_summary(
             "posture_compliance_pct": compliance,
             "posture_compliance_delta": "+3.4%",
             "active_alerts": active_alerts_cnt,
-            "active_alerts_delta": "3 unacknowledged",
+            "active_alerts_delta": alerts_delta,
         },
         "metrics": metrics.to_dict(),
         "insight": insight,
@@ -201,7 +208,7 @@ def get_alerts(
     limit: int = Query(50, ge=1, le=200),
     db: CentralDatabase = Depends(get_database),
 ) -> list[dict[str, Any]]:
-    """Return logged ergonomic posture warnings and system events."""
+    """Return logged ergonomic posture warnings and system events directly connected to risk."""
     query = """
         SELECT e.event_id, e.device_id, e.session_id, e.timestamp, e.event_type, e.event_value,
                d.device_name
@@ -216,16 +223,18 @@ def get_alerts(
         raw_events = [dict(r) for r in cursor.fetchall()]
 
     formatted_alerts = []
+    seen_keys: set[tuple[str, str]] = set()
+
     for r in raw_events:
         try:
-            val = json.loads(r["event_value"])
+            val = json.loads(r["event_value"]) if isinstance(r["event_value"], str) else (r["event_value"] or {})
         except Exception:
-            val = {"message": r["event_value"], "risk_level": "HIGH", "condition": "POSTURE"}
+            val = {"message": str(r["event_value"]), "risk_level": "HIGH", "condition": "POSTURE"}
 
-        risk = val.get("risk_level", "HIGH")
-        if risk == "VERY_HIGH":
+        risk = str(val.get("risk_level", "HIGH")).upper()
+        if risk in ("VERY_HIGH", "CRITICAL"):
             sev = "Critical"
-        elif risk == "HIGH":
+        elif risk in ("HIGH", "HIGH_RISK"):
             sev = "High Risk"
         else:
             sev = "Attention"
@@ -233,6 +242,7 @@ def get_alerts(
         if severity and severity.lower() != "all" and sev.lower() != severity.lower():
             continue
 
+        seen_keys.add((str(r["device_id"]), str(r.get("session_id") or "")))
         formatted_alerts.append({
             "alert_id": r["event_id"],
             "device_id": r["device_id"],
@@ -246,7 +256,63 @@ def get_alerts(
             "status": "Active",
         })
 
-    return formatted_alerts
+    # Connect elevated ergonomic risk directly to the alerts roster:
+    # Query telemetry windows exhibiting high ergonomic risk not already covered in events table
+    query_risk_windows = """
+        SELECT tw.window_id, tw.device_id, tw.session_id, tw.window_start,
+               pm.average_rula, pm.maximum_rula, pm.average_reba, pm.maximum_reba,
+               pm.high_risk_percentage, pm.dominant_posture,
+               d.device_name
+        FROM telemetry_windows tw
+        JOIN posture_metrics pm ON tw.window_id = pm.window_id
+        LEFT JOIN devices d ON tw.device_id = d.device_id
+        WHERE pm.average_rula >= 5.0 OR pm.maximum_rula >= 6 OR pm.high_risk_percentage >= 30.0 OR pm.average_reba >= 8.0
+        ORDER BY tw.window_start DESC
+        LIMIT ?
+    """
+    with db.get_connection() as conn:
+        cursor = conn.execute(query_risk_windows, (limit,))
+        risk_windows = [dict(r) for r in cursor.fetchall()]
+
+    for rw in risk_windows:
+        key = (str(rw["device_id"]), str(rw.get("session_id") or ""))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        avg_rula = float(rw.get("average_rula", 1.0))
+        max_rula = int(rw.get("maximum_rula", 1))
+        avg_reba = float(rw.get("average_reba", 1.0))
+        high_risk_pct = float(rw.get("high_risk_percentage", 0.0))
+        dominant = rw.get("dominant_posture") or "POSTURE_DEFECT"
+
+        if avg_rula >= 6.0 or max_rula >= 7 or high_risk_pct >= 60.0 or avg_reba >= 11.0:
+            sev = "Critical"
+        elif avg_rula >= 5.0 or max_rula >= 6 or high_risk_pct >= 30.0 or avg_reba >= 8.0:
+            sev = "High Risk"
+        else:
+            sev = "Attention"
+
+        if severity and severity.lower() != "all" and sev.lower() != severity.lower():
+            continue
+
+        posture_display = dominant.replace("_", " ").title() if dominant != "NEUTRAL" else "Ergonomic Strain"
+        formatted_alerts.append({
+            "alert_id": f"RISK-{rw['window_id']}",
+            "device_id": rw["device_id"],
+            "device_name": rw.get("device_name") or f"Workstation {rw['device_id']}",
+            "severity": sev,
+            "condition": dominant,
+            "description": f"Sustained elevated ergonomic risk ({sev}: RULA {avg_rula:.1f}, Posture: {posture_display}). Workstation posture adjustment recommended.",
+            "duration_sec": 20.0,
+            "rula_score": avg_rula,
+            "timestamp": rw["window_start"],
+            "status": "Active",
+        })
+
+    # Sort all alerts by timestamp descending and cap at limit
+    formatted_alerts.sort(key=lambda a: a.get("timestamp", ""), reverse=True)
+    return formatted_alerts[:limit]
 
 
 # ── 6. Devices Inventory ──────────────────────────────────────────────────────

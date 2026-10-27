@@ -20,6 +20,7 @@ from pathlib import Path
 import threading
 import time
 from typing import Any, Optional, Tuple, Union
+import uuid
 
 import httpx
 
@@ -104,7 +105,16 @@ def build_telemetry_window_payload(
     start_time_clean = str(session.get("start_time", ""))
     window_id = f"{session.get('session_id')}_{start_time_clean}"
 
-    return {
+    formatted_events = []
+    for ev in events:
+        formatted_events.append({
+            "event_id": str(ev.get("event_id") or uuid.uuid4()),
+            "timestamp": str(ev.get("timestamp", start_time_clean)),
+            "event_type": str(ev.get("event_type", "INFO")),
+            "event_value": str(ev.get("event_value", "")),
+        })
+
+    payload = {
         "window_id": window_id,
         "device_id": device_id,
         "session_id": str(session.get("session_id", "")),
@@ -124,6 +134,10 @@ def build_telemetry_window_payload(
             "breaks_acknowledged": 0,
         },
     }
+    if formatted_events:
+        payload["events"] = formatted_events
+
+    return payload
 
 
 # ── ServerSync Class ──────────────────────────────────────────────────────────

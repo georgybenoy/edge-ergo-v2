@@ -13,7 +13,7 @@
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10.14-FF6F00?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20Qt-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://pypi.org/project/PySide6/)
 
-[![Tests](https://img.shields.io/badge/Tests-248%20Passed%20(100%25)-10B981?style=flat-square&logo=pytest&logoColor=white)](#-testing--verification)
+[![Tests](https://img.shields.io/badge/Tests-297%20Passed%20(100%25)-10B981?style=flat-square&logo=pytest&logoColor=white)](#-testing--verification)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Zero--Media%20Wire%20Audit-00F2FE?style=flat-square&logo=shield&logoColor=black)](#-privacy-guarantees--wire-audit-evidence)
 [![Architecture](https://img.shields.io/badge/Architecture-Edge--First%20Distributed-8B5CF6?style=flat-square)](#-system-architecture)
 [![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square)](LICENSE)
@@ -199,7 +199,7 @@ POST /api/v1/edge/assessment     | 605      | NONE (0 bytes) | PASSED
 
 Deploy directly on worker workstations without installing Python, Git, or dependencies:
 
-1. Locate or distribute [`installer/dist/EdgeErgoAgent.exe`](file:///c:/Users/georg/EDGE-ERGO%20V3/installer/dist/EdgeErgoAgent.exe) and [`installer/start_agent.bat`](file:///c:/Users/georg/EDGE-ERGO%20V3/installer/start_agent.bat).
+1. Locate or distribute `installer/dist/EdgeErgoAgent.exe` and `installer/start_agent.bat`.
 2. **Interactive Setup Workflow**: Double-click `start_agent.bat` or run `EdgeErgoAgent.exe` in PowerShell:
    ```cmd
    EdgeErgoAgent.exe
@@ -210,25 +210,105 @@ Deploy directly on worker workstations without installing Python, Git, or depend
       EdgeErgo Posture & Well-Being Intelligence Platform
       Workstation Edge Agent Setup
    ================================================================================
-   Enter Central Server IP or URL [default: http://192.168.1.37:8000]: 192.168.1.37
-   Enter Workstation / Desk Name [default: DESKTOP-PC]: Desk-02-Marketing
+   Enter Central Server IP or URL (e.g. 192.168.1.100 or http://192.168.1.100:8000): 192.168.1.100
+   Enter Workstation / Desk Name [default: HR-DESKTOP]: HR-Desk-01
 
-   Testing connection to Central Server: http://192.168.1.37:8000 ...
+   Testing connection to Central Server: http://192.168.1.100:8000 ...
 
    ================================================================================
-    [✓] Central Server Connected Successfully!
-        Server URL:        http://192.168.1.37:8000
-        Connection Status: Healthy (EdgeErgo Central Server v0.1.0)
-        Workstation Name:  Desk-02-Marketing
+    [OK] Central Server Connected Successfully!
+         Server URL:        http://192.168.1.100:8000
+         Connection Status: Healthy (EdgeErgo Central Server v0.1.0)
+         Workstation Name:  HR-Desk-01
    ================================================================================
-    Initializing local AI vision engines, camera, and awareness overlay...
+   Note: Server reachability verified via GET /api/v1/health.
+   Initializing local AI vision engines, camera, and awareness overlay...
    ```
-3. **Pre-Flight Health Verification**: The agent calls `GET /api/v1/health` with a 5-second timeout. Only after connectivity is verified does camera capture and neural assessment begin.
+3. **Pre-Flight Health Verification**: The agent calls `GET /api/v1/health` with a 5-second timeout. Only after connectivity is verified does camera capture, MediaPipe vision inference, and ergonomics monitoring begin.
 4. **Connection Failure Protection**: If the server is unreachable, monitoring does NOT start. A diagnostic troubleshooting checklist is shown with interactive options:
    - `[1] Retry connection`
    - `[2] Enter a different server IP / URL`
    - `[3] Exit application`
-5. **Configuration Persistence**: Verified settings are saved locally to `edge_config.json` and reused as defaults on subsequent launches. Command-line flags (e.g. `--server http://192.168.1.37:8000 --device-name "Desk-02"`) can be passed to bypass interactive prompts.
+5. **Configuration Persistence**: Verified settings are saved locally to `edge_config.json` and automatically reused as defaults on subsequent launches. Command-line flags (e.g. `--server http://192.168.1.100:8000 --device-name "HR-Desk-01"`) can be passed to bypass interactive prompts.
+
+---
+
+### 🌐 Multi-Workstation Local Network (LAN) Deployment
+
+EdgeErgo is designed for multi-workstation office environments connected across the same local area network (LAN) without cloud dependencies.
+
+```mermaid
+graph TD
+    subgraph LAN["Local Area Network (LAN / Wi-Fi)"]
+        subgraph ServerPC["🖥️ Central Server PC (e.g. 192.168.1.100)"]
+            SRV["FastAPI Server (:8000)<br/>--host 0.0.0.0"]
+            DASH["Executive Dashboard (:8000 / :5173)"]
+            DB[("central_server.db")]
+            SRV --> DB
+            DASH --> SRV
+        end
+
+        subgraph W1["💻 Workstation 1 (HR-Desk-01)"]
+            A1["EdgeErgoAgent.exe<br/>Local AI + In-Memory RAM"]
+            DB1[("edgeergo_local.db")]
+            A1 --> DB1
+        end
+
+        subgraph W2["💻 Workstation 2 (Finance-Desk-02)"]
+            A2["EdgeErgoAgent.exe<br/>Local AI + In-Memory RAM"]
+            DB2[("edgeergo_local.db")]
+            A2 --> DB2
+        end
+
+        subgraph W3["💻 Workstation 3 (Eng-Desk-03)"]
+            A3["EdgeErgoAgent.exe<br/>Local AI + In-Memory RAM"]
+            DB3[("edgeergo_local.db")]
+            A3 --> DB3
+        end
+
+        A1 -- "GET /api/v1/health<br/>POST /edge/register (NODE-001)<br/>POST /edge/heartbeat<br/>POST /edge/assessment" --> SRV
+        A2 -- "GET /api/v1/health<br/>POST /edge/register (NODE-002)<br/>POST /edge/heartbeat<br/>POST /edge/assessment" --> SRV
+        A3 -- "GET /api/v1/health<br/>POST /edge/register (NODE-003)<br/>POST /edge/heartbeat<br/>POST /edge/assessment" --> SRV
+    end
+```
+
+#### Step 1: Start Central Server on Host PC
+1. Identify the host computer's LAN IP address:
+   ```cmd
+   ipconfig
+   ```
+   *(Look for `IPv4 Address`, e.g., `192.168.1.100`)*
+2. Ensure Windows Firewall permits incoming TCP connections on port 8000:
+   ```cmd
+   netsh advfirewall firewall add rule name="EdgeErgo Central Server" dir=in action=allow protocol=TCP localport=8000
+   ```
+3. Launch the Central Server (bound to `0.0.0.0` for network accessibility):
+   ```cmd
+   installer\start_server.bat
+   ```
+   Or via Python:
+   ```cmd
+   python -m uvicorn central_server.main:app --host 0.0.0.0 --port 8000
+   ```
+
+#### Step 2: Deploy and Connect Workstations
+1. Copy `EdgeErgoAgent.exe` and `start_agent.bat` from `installer/dist/` to each workstation.
+2. Launch `EdgeErgoAgent.exe` or double-click `start_agent.bat`.
+3. At the prompt:
+   - **Central Server IP or URL**: Enter the host's IP (e.g. `192.168.1.100`). The agent automatically constructs `http://192.168.1.100:8000`.
+   - **Workstation Name**: Enter a friendly label (e.g. `HR-Desk-01` on PC 1, `Finance-Desk-02` on PC 2), or press Enter to keep the computer's hostname.
+4. The agent tests connectivity via `GET /api/v1/health`.
+5. Once connected, the agent registers with the central server (receiving a unique `NODE-xxx` ID) and begins monitoring.
+6. On subsequent launches on that workstation, the verified IP and workstation name are saved in `edge_config.json`—simply press Enter to accept them.
+
+#### Step 3: Monitor Aggregated Telemetry on Central Dashboard
+- Open a web browser on any authorized LAN computer:
+  - Central Server: `http://localhost:8000` (or `http://localhost:5173` for Vite dev server)
+  - Other LAN PCs: `http://192.168.1.100:8000`
+- The dashboard automatically displays all connected workstations (`NODE-001`, `NODE-002`, ...), their live online/offline heartbeat status, and aggregate ergonomics metrics.
+
+> [!NOTE]
+> **Authentication & Network Scope**: `GET /api/v1/health` is a lightweight diagnostic endpoint designed for LAN connectivity validation. In enterprise environments requiring API token verification, ensure subsequent `POST /api/v1/edge/*` endpoints are configured with authorization headers. Never expose the unencrypted central server port directly to the public internet without a TLS reverse proxy or VPN.
 
 ---
 
@@ -273,7 +353,7 @@ npm run dev
 
 ## 🧪 Testing & Verification
 
-EdgeErgo contains **248 automated tests** passing with a 100% success rate:
+EdgeErgo contains **297 automated tests** passing with a 100% success rate:
 
 ```bash
 # Run the complete test suite
@@ -293,7 +373,7 @@ python scripts/audit_privacy.py
 ```
 
 ```text
-======================= 248 passed, 4 skipped in 28.43s =======================
+======================= 297 passed, 4 skipped in 27.15s =======================
 ```
 
 ---
@@ -303,6 +383,7 @@ python scripts/audit_privacy.py
 ```
 EDGE-ERGO V3/
 ├── edge_agent/                     # Workstation Edge Client (Local-First)
+│   ├── assessment_state.py         # Thread-safe local real-time assessment provider & risk derivation
 │   ├── camera/                     # OpenCV video ingestion (DirectShow / MSMF)
 │   ├── vision/                     # MediaPipe Pose Lite & Face Landmarker pipelines
 │   ├── geometry/                   # Pure NumPy 3D joint angle vector mathematics

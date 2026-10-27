@@ -53,6 +53,7 @@ hiddenimports = [
     'edge_agent.geometry.angle_calculator',
     'edge_agent.health.heartbeat',
     'edge_agent.overlay.overlay',
+    'edge_agent.assessment_state',
     'edge_agent.storage.local_db',
     'edge_agent.sync.server_sync',
     'edge_agent.temporal.analyzer',

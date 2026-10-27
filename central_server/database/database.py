@@ -465,8 +465,15 @@ class CentralDatabase:
             )
 
             # 6. Insert events if provided
+            has_alert_event = False
             for ev in payload.get("events", []):
                 ev_id = ev.get("event_id") or str(uuid.uuid4())
+                ev_type = str(ev.get("event_type", "INFO"))
+                if ev_type == "ALERT":
+                    has_alert_event = True
+                ev_val = ev.get("event_value", "")
+                if isinstance(ev_val, dict):
+                    ev_val = json.dumps(ev_val)
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO events (
@@ -478,11 +485,52 @@ class CentralDatabase:
                         device_id,
                         session_id,
                         ev.get("timestamp", now_ts),
-                        ev.get("event_type", "INFO"),
-                        ev.get("event_value", ""),
+                        ev_type,
+                        ev_val,
                         now_ts,
                     ),
                 )
+
+            # Auto-generate risk-based alert if window exhibits elevated ergonomic risk and no alert event was provided
+            if not has_alert_event:
+                avg_rula = float(ergo.get("average_rula", 1.0))
+                max_rula = int(ergo.get("maximum_rula", 1))
+                high_risk_pct = float(ergo.get("high_risk_percentage", 0.0))
+                avg_reba = float(ergo.get("average_reba", 1.0))
+                dominant = str(ergo.get("dominant_posture", "NEUTRAL"))
+
+                if avg_rula >= 5.0 or max_rula >= 6 or high_risk_pct >= 30.0 or avg_reba >= 8.0:
+                    if avg_rula >= 6.0 or max_rula >= 7 or high_risk_pct >= 60.0 or avg_reba >= 11.0:
+                        risk_level = "VERY_HIGH"
+                        sev_name = "Critical"
+                    else:
+                        risk_level = "HIGH"
+                        sev_name = "High Risk"
+
+                    posture_desc = dominant.replace("_", " ").title() if dominant != "NEUTRAL" else "Ergonomic Strain"
+                    alert_info = {
+                        "condition": dominant if dominant != "NEUTRAL" else "POSTURE",
+                        "risk_level": risk_level,
+                        "rula_score": avg_rula,
+                        "reba_score": avg_reba,
+                        "duration_sec": 20.0,
+                        "message": f"Elevated ergonomic risk detected ({sev_name}: RULA {avg_rula:.1f}, Posture: {posture_desc}). Workstation posture adjustment recommended.",
+                    }
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO events (
+                            event_id, device_id, session_id, timestamp, event_type, event_value, created_at
+                        ) VALUES (?, ?, ?, ?, 'ALERT', ?, ?)
+                        """,
+                        (
+                            f"ALERT-{uuid.uuid4().hex[:8]}",
+                            device_id,
+                            session_id,
+                            window_start,
+                            json.dumps(alert_info),
+                            now_ts,
+                        ),
+                    )
 
             # 7. Update device last_seen
             conn.execute("UPDATE devices SET last_seen = ? WHERE device_id = ?", (now_ts, device_id))

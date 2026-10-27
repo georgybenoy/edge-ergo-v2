@@ -86,6 +86,7 @@ class TelemetryWindowPayload(BaseModel):
     ergonomics: ErgonomicsMetricsPayload
     facial_expression: FacialExpressionPayload
     breaks: BreaksPayload = Field(default_factory=BreaksPayload)
+    events: list[dict[str, Any]] = Field(default_factory=list, description="Optional window events or alerts")
 
     @field_validator("window_start", "window_end")
     @classmethod

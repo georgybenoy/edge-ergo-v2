@@ -3,7 +3,6 @@ import { PageHeader, DashboardSubTab } from "../components/PageHeader";
 import { KPICard } from "../components/KPICard";
 import { Card } from "../components/Card";
 import { InsightCard } from "../components/InsightCard";
-import { PrivacyIndicator } from "../components/PrivacyIndicator";
 import { PostureRiskTimeline } from "../charts/PostureRiskTimeline";
 import { PostureBreakdownBar } from "../charts/PostureBreakdownBar";
 import { RiskDonutChart } from "../charts/RiskDonutChart";
@@ -238,9 +237,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
           onAction={onNavigateToWorkers}
         />
       )}
-
-      {/* Privacy Architecture Guarantee Banner */}
-      <PrivacyIndicator />
     </div>
   );
 };

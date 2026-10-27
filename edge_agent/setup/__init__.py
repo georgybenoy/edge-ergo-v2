@@ -7,6 +7,7 @@ from edge_agent.setup.interactive import (
     get_default_workstation_name,
     normalize_server_url,
     run_interactive_setup,
+    validate_workstation_name,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "get_default_workstation_name",
     "normalize_server_url",
     "run_interactive_setup",
+    "validate_workstation_name",
 ]
