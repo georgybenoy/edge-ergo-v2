@@ -29,6 +29,7 @@ import numpy as np
 # Core edge agent modules
 from edge_agent.camera.camera import Camera, CameraError, Frame, list_available_cameras
 from edge_agent.config.config_manager import ConfigManager
+from edge_agent.setup.interactive import run_interactive_setup
 from edge_agent.ergonomics.scoring import assess
 from edge_agent.expression.classifier import ExpressionClassifier
 from edge_agent.feedback.alert_engine import AlertEngine, AlertPriority
@@ -328,25 +329,39 @@ def main() -> None:
     parser.add_argument("--headless", action="store_true", help="Run without PySide6 desktop overlay")
     parser.add_argument("--no-camera", action="store_true", help="Run with synthetic test frames without physical camera")
     parser.add_argument("--fps", type=float, default=15.0, help="Target capture FPS (default: 15.0)")
+    parser.add_argument("--no-prompt", "--non-interactive", action="store_true", help="Disable interactive console prompts")
 
     args = parser.parse_args()
 
+    # 1. Initialize configuration manager to inspect local defaults
+    c_path = Path(args.config) if args.config else Path("edge_config.json")
+    config_manager = ConfigManager(c_path)
+
+    # 2. Interactive setup & server health check BEFORE camera or vision initialization
+    verified_server_url, verified_device_name = run_interactive_setup(
+        config_manager=config_manager,
+        cli_server_url=args.server,
+        cli_device_name=args.device_name,
+        non_interactive=args.no_prompt,
+    )
+
+    # 3. Only after successful connectivity verification, initialize EdgeAgentController
     controller = EdgeAgentController(
         config_path=args.config,
-        server_url=args.server,
-        device_name=args.device_name,
+        server_url=verified_server_url,
+        device_name=verified_device_name,
         no_camera=args.no_camera,
         headless=args.headless,
         target_fps=args.fps,
     )
 
-    # 1. First-time registration & node identification
+    # 4. Node registration & identification
     controller.setup_and_register()
 
-    # 2. Start background heartbeat & sync threads
+    # 5. Start background heartbeat & sync threads
     controller.start_background_services()
 
-    # 3. Start analysis pipeline
+    # 6. Start analysis pipeline
     controller.start_pipeline()
 
     # 4. UI Loop vs Headless Loop

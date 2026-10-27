@@ -34,22 +34,8 @@ echo ===========================================================================
 echo  EdgeErgo Edge Agent Launcher
 echo ==============================================================================
 
-rem Check if edge_config.json already exists
-if not exist "edge_config.json" (
-    echo First-time launch detected!
-    set /p "SERVER_URL=Enter Central Server URL [default: http://localhost:8000]: "
-    if "!SERVER_URL!"=="" set "SERVER_URL=http://localhost:8000"
-    
-    set /p "DEVICE_NAME=Enter Workstation / Desk Name [default: Workstation-01]: "
-    if "!DEVICE_NAME!"=="" set "DEVICE_NAME=Workstation-01"
-
-    echo.
-    echo Launching EdgeErgoAgent connected to !SERVER_URL! ...
-    "%EXE_PATH%" --server "!SERVER_URL!" --device-name "!DEVICE_NAME!" %*
-) else (
-    echo Starting EdgeErgoAgent with existing configuration...
-    "%EXE_PATH%" %*
-)
+rem Launch EdgeErgoAgent with native interactive setup and health verification
+"%EXE_PATH%" %*
 
 if %ERRORLEVEL% neq 0 (
     echo.

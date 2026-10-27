@@ -200,11 +200,35 @@ POST /api/v1/edge/assessment     | 605      | NONE (0 bytes) | PASSED
 Deploy directly on worker workstations without installing Python, Git, or dependencies:
 
 1. Locate or distribute [`installer/dist/EdgeErgoAgent.exe`](file:///c:/Users/georg/EDGE-ERGO%20V3/installer/dist/EdgeErgoAgent.exe) and [`installer/start_agent.bat`](file:///c:/Users/georg/EDGE-ERGO%20V3/installer/start_agent.bat).
-2. Launch the agent via the batch script or Command Prompt:
+2. **Interactive Setup Workflow**: Double-click `start_agent.bat` or run `EdgeErgoAgent.exe` in PowerShell:
    ```cmd
-   EdgeErgoAgent.exe --server http://192.168.1.37:8000 --device-name "Desk-02"
+   EdgeErgoAgent.exe
    ```
-3. The desktop awareness overlay will appear in the screen corner, automatically initializing local vision capture, registering with the server, and beginning posture monitoring.
+   The agent will launch an interactive setup wizard directly in your console:
+   ```text
+   ================================================================================
+      EdgeErgo Posture & Well-Being Intelligence Platform
+      Workstation Edge Agent Setup
+   ================================================================================
+   Enter Central Server IP or URL [default: http://192.168.1.37:8000]: 192.168.1.37
+   Enter Workstation / Desk Name [default: DESKTOP-PC]: Desk-02-Marketing
+
+   Testing connection to Central Server: http://192.168.1.37:8000 ...
+
+   ================================================================================
+    [✓] Central Server Connected Successfully!
+        Server URL:        http://192.168.1.37:8000
+        Connection Status: Healthy (EdgeErgo Central Server v0.1.0)
+        Workstation Name:  Desk-02-Marketing
+   ================================================================================
+    Initializing local AI vision engines, camera, and awareness overlay...
+   ```
+3. **Pre-Flight Health Verification**: The agent calls `GET /api/v1/health` with a 5-second timeout. Only after connectivity is verified does camera capture and neural assessment begin.
+4. **Connection Failure Protection**: If the server is unreachable, monitoring does NOT start. A diagnostic troubleshooting checklist is shown with interactive options:
+   - `[1] Retry connection`
+   - `[2] Enter a different server IP / URL`
+   - `[3] Exit application`
+5. **Configuration Persistence**: Verified settings are saved locally to `edge_config.json` and reused as defaults on subsequent launches. Command-line flags (e.g. `--server http://192.168.1.37:8000 --device-name "Desk-02"`) can be passed to bypass interactive prompts.
 
 ---
 

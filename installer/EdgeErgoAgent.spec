@@ -56,6 +56,8 @@ hiddenimports = [
     'edge_agent.storage.local_db',
     'edge_agent.sync.server_sync',
     'edge_agent.temporal.analyzer',
+    'edge_agent.setup',
+    'edge_agent.setup.interactive',
     'edge_agent.vision.pose_engine',
     'edge_agent.vision.face_engine',
 ]
