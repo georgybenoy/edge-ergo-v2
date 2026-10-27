@@ -80,36 +80,52 @@ export const AnalyticsPage: React.FC = () => {
 
       {/* Movement & Break Compliance */}
       <Card>
-        <div className="flex items-center gap-2 pb-3 border-b border-subtle-border mb-4">
-          <Activity className="w-4 h-4 text-status-safe" />
-          <h3 className="text-card-title text-content-primary font-medium">
-            Movement & Break Compliance
-          </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-subtle-border mb-6 gap-2">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-status-safe" />
+            <h3 className="text-card-title text-content-primary font-medium">
+              Movement & Break Compliance
+            </h3>
+          </div>
+          <span className="text-caption text-content-secondary bg-bg-secondary px-2.5 py-1 rounded border border-subtle-border">
+            Fleet Adherence: <strong className="text-status-safe font-mono">{metrics?.break_compliance_rate || 0}%</strong>
+          </span>
         </div>
-        <div className="space-y-4 max-w-xl">
-          <div className="flex items-center justify-between text-body">
-            <span className="text-content-secondary">Total Scheduled Movement Prompts:</span>
-            <span className="font-medium text-content-primary font-mono">
+
+        {/* Metric Cards across full width */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="p-4 rounded-md bg-bg-secondary border border-subtle-border">
+            <p className="text-caption text-content-secondary mb-1">Total Scheduled Prompts</p>
+            <p className="text-2xl font-semibold text-content-primary font-mono">
               {metrics?.total_breaks_recommended || 0}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-body">
-            <span className="text-content-secondary">Acknowledged by Workers:</span>
-            <span className="font-medium text-content-primary font-mono">
-              {metrics?.total_breaks_acknowledged || 0}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-body">
-            <span className="text-content-secondary">Fleet Break Adherence Rate:</span>
-            <span className="font-medium text-status-safe font-mono">
-              {metrics?.break_compliance_rate || 0}%
-            </span>
+            </p>
           </div>
 
-          <div className="w-full h-2 rounded-full bg-bg-secondary overflow-hidden">
+          <div className="p-4 rounded-md bg-bg-secondary border border-subtle-border">
+            <p className="text-caption text-content-secondary mb-1">Acknowledged by Workers</p>
+            <p className="text-2xl font-semibold text-content-primary font-mono">
+              {metrics?.total_breaks_acknowledged || 0}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-md bg-bg-secondary border border-subtle-border">
+            <p className="text-caption text-content-secondary mb-1">Fleet Break Adherence</p>
+            <p className="text-2xl font-semibold text-status-safe font-mono">
+              {metrics?.break_compliance_rate || 0}%
+            </p>
+          </div>
+        </div>
+
+        {/* Full-width Progress Bar */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-caption text-content-muted">
+            <span>Overall Fleet Adherence Progress</span>
+            <span className="font-mono text-content-secondary">{metrics?.break_compliance_rate || 0}%</span>
+          </div>
+          <div className="w-full h-2.5 rounded-full bg-bg-secondary overflow-hidden border border-subtle-border">
             <div
-              style={{ width: `${metrics?.break_compliance_rate || 0}%` }}
-              className="h-full bg-status-safe"
+              style={{ width: `${Math.min(metrics?.break_compliance_rate || 0, 100)}%` }}
+              className="h-full bg-status-safe transition-all duration-500 rounded-full"
             />
           </div>
         </div>
