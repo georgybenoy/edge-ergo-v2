@@ -32,6 +32,7 @@ from central_server.analytics.analytics import (
     get_workstation_summaries,
 )
 from central_server.database.database import CentralDatabase
+from central_server.reports.logo_base64 import LOGO_PNG_BASE64
 
 logger = logging.getLogger(__name__)
 
@@ -450,10 +451,13 @@ class ReportGenerator:
 <body>
   <div class="container">
     <div class="header">
-      <div>
-        <div class="logo">EDGE<span>ERGO</span></div>
-        <h2 style="margin: 8px 0 0 0; font-size: 22px;">{rep.get('title')}</h2>
-        <div style="font-size: 12px; color: #A7A7A7; margin-top: 4px;">Period: {rep.get('start_date')} to {rep.get('end_date')}</div>
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="data:image/png;base64,{LOGO_PNG_BASE64}" style="width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0;" alt="EdgeErgo Logo" />
+        <div>
+          <div class="logo">EDGE<span>ERGO</span></div>
+          <h2 style="margin: 4px 0 0 0; font-size: 22px;">{rep.get('title')}</h2>
+          <div style="font-size: 12px; color: #A7A7A7; margin-top: 4px;">Period: {rep.get('start_date')} to {rep.get('end_date')}</div>
+        </div>
       </div>
       <div class="meta">
         <div><strong>Report ID:</strong> {rep.get('report_id')}</div>

@@ -27,7 +27,7 @@ from typing import Optional
 import numpy as np
 
 # Core edge agent modules
-from edge_agent.camera.camera import Camera, Frame, list_available_cameras
+from edge_agent.camera.camera import Camera, CameraError, Frame, list_available_cameras
 from edge_agent.config.config_manager import ConfigManager
 from edge_agent.ergonomics.scoring import assess
 from edge_agent.expression.classifier import ExpressionClassifier
@@ -194,16 +194,19 @@ class EdgeAgentController:
                 loop_start = time.time()
 
                 # 1. Fetch frame
+                rgb = None
                 if cam is not None and cam.is_open:
                     try:
                         cf = cam.read_frame()
-                        rgb = cf.to_rgb() if cf is not None else None
+                        if cf is not None:
+                            rgb = cf.to_rgb()
+                    except CameraError as e:
+                        logger.warning("Camera frame read issue: %s. Using synthetic frame.", e)
                     except Exception as e:
-                        logger.warning("Transient camera read error: %s. Using fallback frame.", e)
-                        rgb = np.zeros((480, 640, 3), dtype=np.uint8)
-                        time.sleep(0.1)
-                else:
-                    # Synthetic 640x480 RGB frame for headless/test operation
+                        logger.warning("Unexpected error during frame read: %s", e)
+
+                if rgb is None:
+                    # Synthetic 640x480 RGB frame for headless/test/fallback operation
                     rgb = np.zeros((480, 640, 3), dtype=np.uint8)
 
                 if rgb is not None:
@@ -245,12 +248,18 @@ class EdgeAgentController:
                     # 7. Update UI Overlay Status
                     if self.overlay_widget is not None:
                         try:
+                            last_str = time.strftime("%H:%M:%S", time.localtime(cur_time))
                             self.overlay_widget.update_status(
+                                is_monitoring=True,
                                 risk_level=risk_cat,
-                                sync_status="Synced" if not self.server_sync.is_busy() else "Syncing...",
+                                rula=rula,
+                                reba=reba,
+                                dominant_posture=getattr(assessment, "dominant_posture", "NEUTRAL"),
+                                last_time_str=last_str,
+                                sync_status="Synced ●" if not self.server_sync.is_busy() else "Syncing...",
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Overlay update issue: %s", e)
 
                     frame_idx += 1
 
@@ -314,7 +323,7 @@ def main() -> None:
         description="EdgeErgo — Privacy-Preserving Edge AI Ergonomic & Expression Monitoring Agent"
     )
     parser.add_argument("--config", type=str, help="Path to local configuration JSON file")
-    parser.add_argument("--server", "--server-url", dest="server", type=str, help="Central Server address (e.g. http://localhost:8000)")
+    parser.add_argument("--server", "--server-url", type=str, help="Central Server address (e.g. http://localhost:8000)")
     parser.add_argument("--device-name", type=str, help="Custom workstation or desk label")
     parser.add_argument("--headless", action="store_true", help="Run without PySide6 desktop overlay")
     parser.add_argument("--no-camera", action="store_true", help="Run with synthetic test frames without physical camera")
@@ -362,7 +371,7 @@ def main() -> None:
 
             # Position in top-right screen quadrant
             screen_geo = app.primaryScreen().availableGeometry()
-            overlay.move(screen_geo.width() - 320, 40)
+            overlay.move(screen_geo.width() - 440, 40)
             overlay.show()
 
             logger.info("Worker Desktop Awareness Overlay launched. Running Qt event loop.")

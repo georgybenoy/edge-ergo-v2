@@ -24,9 +24,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
+  const loadData = async (silent: boolean = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [sum, tr] = await Promise.all([
         DashboardApi.getSummary(),
@@ -35,14 +37,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
       setSummaryData(sum);
       setTrendsData(tr);
     } catch (err: any) {
-      setError(err.message || "Failed to load dashboard telemetry.");
+      if (!silent) {
+        setError(err.message || "Failed to load dashboard telemetry.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadData();
+    // Live telemetry auto-polling every 4 seconds to mirror edge stream
+    const pollTimer = setInterval(() => {
+      loadData(true);
+    }, 4000);
+    return () => clearInterval(pollTimer);
   }, []);
 
   const kpis = summaryData?.kpis;
@@ -53,7 +64,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
     <div className="space-y-6">
       {/* Page Header */}
       <PageHeader
-        title="Ergonomic analytics"
+        title="Ergonomic Analytics"
         subtitle="Real-time workplace posture intelligence"
         tabs={["Overview", "Posture", "Risk", "Fatigue", "Expression", "Activity"]}
         activeSubTab={activeSubTab}
@@ -124,7 +135,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
                 </p>
               </div>
               <button
-                onClick={loadData}
+                onClick={() => loadData(false)}
                 className="p-1.5 rounded-md hover:bg-bg-hover text-content-muted hover:text-content-primary transition-colors"
                 title="Refresh Telemetry"
               >

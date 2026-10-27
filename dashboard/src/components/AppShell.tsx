@@ -49,6 +49,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       <footer className="w-full border-t border-subtle-border bg-bg-app py-4 text-caption text-content-muted">
         <div className="max-w-content mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="EdgeErgo Logo" className="w-4 h-4 rounded-full object-contain opacity-80" />
             <span>EdgeErgo Enterprise v0.1.0</span>
             <span>•</span>
             <span>Local On-Device Computer Vision</span>

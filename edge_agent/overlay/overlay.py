@@ -22,11 +22,14 @@ Non-intrusive design:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import sys
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
+
+LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -62,6 +65,8 @@ COLOR_BLUE = "#3B82F6"      # Info blue
 class WorkerOverlayWidget(QWidget):
     """PySide6 floating overlay for ergonomic status and transient notifications."""
 
+    status_signal = Signal(dict)
+
     def __init__(
         self,
         alert_engine: Optional[AlertEngine] = None,
@@ -84,6 +89,11 @@ class WorkerOverlayWidget(QWidget):
         self._current_notification: Optional[NotificationItem] = None
         self._is_collapsed = False
         self._drag_pos = QPoint()
+
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
+        self.status_signal.connect(self._apply_status_update)
 
         self._build_ui()
         self._setup_timers()
@@ -115,6 +125,14 @@ class WorkerOverlayWidget(QWidget):
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(8)
 
+        if LOGO_PATH.exists():
+            self.lbl_logo = QLabel(self.status_bar)
+            pix = QPixmap(str(LOGO_PATH)).scaled(
+                16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+            self.lbl_logo.setPixmap(pix)
+            status_layout.addWidget(self.lbl_logo)
+
         # Monitoring status indicator
         self.lbl_monitoring = QLabel("EdgeErgo ● Monitoring", self.status_bar)
         self.lbl_monitoring.setStyleSheet(f"color: {COLOR_LOW}; font-weight: bold; font-size: 11px;")
@@ -131,8 +149,12 @@ class WorkerOverlayWidget(QWidget):
         """)
 
         # Timing label
-        self.lbl_timing = QLabel("Last: -- | Next: --", self.status_bar)
+        self.lbl_timing = QLabel("Last: --", self.status_bar)
         self.lbl_timing.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+
+        # Live Scores (RULA / REBA)
+        self.lbl_scores = QLabel("RULA: -- | REBA: --", self.status_bar)
+        self.lbl_scores.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-weight: 500;")
 
         # Sync indicator
         self.lbl_sync = QLabel("Synced ●", self.status_bar)
@@ -160,6 +182,7 @@ class WorkerOverlayWidget(QWidget):
 
         status_layout.addWidget(self.lbl_monitoring)
         status_layout.addWidget(self.lbl_risk)
+        status_layout.addWidget(self.lbl_scores)
         status_layout.addStretch()
         status_layout.addWidget(self.lbl_timing)
         status_layout.addWidget(self.lbl_sync)
@@ -256,11 +279,34 @@ class WorkerOverlayWidget(QWidget):
         *,
         is_monitoring: bool = True,
         risk_level: str = "LOW",
+        rula: float = 1.0,
+        reba: float = 1.0,
+        dominant_posture: str = "NEUTRAL",
         last_time_str: str = "--",
         next_time_str: str = "--",
         sync_status: str = "Synced ●",
     ) -> None:
-        """Update the persistent status bar without requiring the dashboard."""
+        """Thread-safe status update via Qt Signal."""
+        self.status_signal.emit({
+            "is_monitoring": is_monitoring,
+            "risk_level": risk_level,
+            "rula": rula,
+            "reba": reba,
+            "dominant_posture": dominant_posture,
+            "last_time_str": last_time_str,
+            "next_time_str": next_time_str,
+            "sync_status": sync_status,
+        })
+
+    def _apply_status_update(self, data: dict) -> None:
+        """Executed on Qt main thread via Signal slot."""
+        is_monitoring = data.get("is_monitoring", True)
+        risk_level = data.get("risk_level", "LOW")
+        rula = float(data.get("rula", 1.0))
+        reba = float(data.get("reba", 1.0))
+        last_time_str = data.get("last_time_str", "--")
+        sync_status = data.get("sync_status", "Synced ●")
+
         if is_monitoring:
             self.lbl_monitoring.setText("EdgeErgo ● Monitoring")
             self.lbl_monitoring.setStyleSheet(f"color: {COLOR_LOW}; font-weight: bold; font-size: 11px;")
@@ -269,7 +315,7 @@ class WorkerOverlayWidget(QWidget):
             self.lbl_monitoring.setStyleSheet(f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;")
 
         # Update risk badge
-        risk_clean = risk_level.upper()
+        risk_clean = str(risk_level).upper()
         if risk_clean in ("VERY_HIGH", "HIGH"):
             color = COLOR_HIGH
             bg = "rgba(239, 68, 68, 0.18)"
@@ -290,8 +336,19 @@ class WorkerOverlayWidget(QWidget):
             font-size: 10px;
         """)
 
+        # Live terminal parity scores
+        self.lbl_scores.setText(f"RULA: {rula:.1f} | REBA: {reba:.1f}")
+
+        # Update timing and sync status
+        next_time_str = data.get("next_time_str", "--")
         self.lbl_timing.setText(f"Last: {last_time_str} | Next: {next_time_str}")
         self.lbl_sync.setText(sync_status)
+        if "Syncing" in sync_status:
+            self.lbl_sync.setStyleSheet(f"color: {COLOR_MODERATE}; font-size: 10px;")
+        else:
+            self.lbl_sync.setStyleSheet(f"color: {COLOR_BLUE}; font-size: 10px;")
+
+        self.update()
 
     # ── Notification Presentation (PRD §30, §35) ──────────────────────
 
@@ -349,11 +406,13 @@ class WorkerOverlayWidget(QWidget):
         """Collapse or expand the status bar to a compact pill."""
         self._is_collapsed = not self._is_collapsed
         if self._is_collapsed:
+            self.lbl_scores.setVisible(False)
             self.lbl_timing.setVisible(False)
             self.lbl_sync.setVisible(False)
             self.card_frame.setVisible(False)
             self.btn_toggle.setText("+")
         else:
+            self.lbl_scores.setVisible(True)
             self.lbl_timing.setVisible(True)
             self.lbl_sync.setVisible(True)
             if self._current_notification is not None:

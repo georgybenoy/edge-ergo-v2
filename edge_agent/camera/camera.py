@@ -118,11 +118,7 @@ def list_available_cameras(max_index: int = 8) -> list[int]:
     available: list[int] = []
     for idx in range(max_index):
         cap = cv2.VideoCapture(idx, backend)
-        opened = cap.isOpened()
-        if not opened and backend != cv2.CAP_ANY:
-            cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-            opened = cap.isOpened()
-        if opened:
+        if cap.isOpened():
             available.append(idx)
             cap.release()
         else:
@@ -232,12 +228,8 @@ class Camera:
         logger.info("Opening camera %d ...", self._camera_index)
         backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
         cap = cv2.VideoCapture(self._camera_index, backend)
-        opened = cap.isOpened()
-        if not opened and backend != cv2.CAP_ANY:
-            cap = cv2.VideoCapture(self._camera_index, cv2.CAP_ANY)
-            opened = cap.isOpened()
 
-        if not opened:
+        if not cap.isOpened():
             cap.release()
             # Distinguish "not found" from "permission denied" as best we
             # can — OpenCV doesn't expose the OS error, so we probe the
@@ -311,7 +303,13 @@ class Camera:
 
         assert self._cap is not None  # guaranteed by is_open check
 
-        ret, raw_frame = self._cap.read()
+        ret, raw_frame = False, None
+        for _ in range(3):
+            ret, raw_frame = self._cap.read()
+            if ret and raw_frame is not None and raw_frame.size > 0:
+                break
+            time.sleep(0.01)
+
         capture_time = time.monotonic()
 
         if not ret or raw_frame is None or raw_frame.size == 0:

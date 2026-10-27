@@ -34,9 +34,11 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
             onClick={() => onSelectTab("Dashboard")}
             className="flex items-center gap-2 cursor-pointer select-none group"
           >
-            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center font-bold text-white text-xs tracking-wider shadow-sm">
-              EE
-            </div>
+            <img
+              src="/logo.png"
+              alt="EdgeErgo Logo"
+              className="w-8 h-8 rounded-lg object-contain shadow-sm group-hover:scale-105 transition-transform"
+            />
             <span className="font-semibold text-[15px] tracking-tight text-content-primary group-hover:text-white transition-colors">
               EDGE<span className="text-brand-primary">ERGO</span>
             </span>
