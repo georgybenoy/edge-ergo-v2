@@ -5,9 +5,21 @@ rem Runs EdgeErgoAgent.exe without requiring Python, OpenCV, or MediaPipe.
 rem ==============================================================================
 
 setlocal enabledelayedexpansion
-cd /d "%~dp0\.."
 
-set "EXE_PATH=installer\dist\EdgeErgoAgent.exe"
+rem Detect executable location (supports standalone folder or repo checkout)
+if exist "%~dp0EdgeErgoAgent.exe" (
+    set "EXE_PATH=%~dp0EdgeErgoAgent.exe"
+    cd /d "%~dp0"
+) else if exist "%~dp0dist\EdgeErgoAgent.exe" (
+    set "EXE_PATH=%~dp0dist\EdgeErgoAgent.exe"
+    cd /d "%~dp0"
+) else if exist "%~dp0..\installer\dist\EdgeErgoAgent.exe" (
+    set "EXE_PATH=%~dp0..\installer\dist\EdgeErgoAgent.exe"
+    cd /d "%~dp0.."
+) else (
+    cd /d "%~dp0\.."
+    set "EXE_PATH=installer\dist\EdgeErgoAgent.exe"
+)
 
 if not exist "%EXE_PATH%" (
     echo [ERROR] %EXE_PATH% not found!
