@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PageHeader, DashboardSubTab } from "../components/PageHeader";
+import { PageHeader } from "../components/PageHeader";
 import { KPICard } from "../components/KPICard";
 import { Card } from "../components/Card";
 import { InsightCard } from "../components/InsightCard";
@@ -16,7 +16,6 @@ interface DashboardPageProps {
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorkers }) => {
-  const [activeSubTab, setActiveSubTab] = useState<DashboardSubTab>("Overview");
   const [filterOption, setFilterOption] = useState<string>("All Workers");
   const [summaryData, setSummaryData] = useState<DashboardSummaryResponse | null>(null);
   const [trendsData, setTrendsData] = useState<TrendPoint[]>([]);
@@ -65,9 +64,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToWorker
       <PageHeader
         title="Ergonomic Analytics"
         subtitle="Real-time workplace posture intelligence"
-        tabs={["Overview", "Posture", "Risk", "Fatigue", "Expression", "Activity"]}
-        activeSubTab={activeSubTab}
-        onSelectSubTab={setActiveSubTab}
         filterOption={filterOption}
         onFilterChange={setFilterOption}
       />
